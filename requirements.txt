@@ -1,4 +1,4 @@
-requirements.txt torch
+torch
 datasets
 pybioclip
 chromadb
