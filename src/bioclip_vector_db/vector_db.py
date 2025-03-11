@@ -139,6 +139,11 @@ def main():
         default=False,
         help="Reset the entire vector database, if unset, only the new records are added"
     )
+    parser.add_argument(
+        "--split", 
+        type=str, 
+        default="train", 
+        help="Split of the dataset to use.")
 
     args = parser.parse_args()
     dataset = args.dataset
@@ -151,7 +156,7 @@ def main():
     vdb = BioclipVectorDatabase(
         dataset_type=dataset, 
         collection_dir=output_dir, 
-        split="train")
+        split=args.split)
     vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
