@@ -1,5 +1,7 @@
+numpy==1.*
 torch
 datasets
+pytorch
 pybioclip
 chromadb
 tqdm

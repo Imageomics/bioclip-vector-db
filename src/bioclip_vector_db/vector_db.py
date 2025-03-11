@@ -132,6 +132,12 @@ def main():
         default=_DEFAULT_OUTPUT_DIR,
         help="Output directory to save the database"
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Reset the entire vector database, if unset, only the new records are added"
+    )
 
     args = parser.parse_args()
     dataset = args.dataset
@@ -145,7 +151,7 @@ def main():
         dataset_type=dataset, 
         collection_dir=output_dir, 
         split="train")
-    vdb.load_database(reset=True)
+    vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
     main()
