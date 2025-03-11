@@ -151,7 +151,7 @@ def main():
     vdb = BioclipVectorDatabase(
         dataset_type=dataset, 
         collection_dir=output_dir, 
-        split="")
+        split="train")
     vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
