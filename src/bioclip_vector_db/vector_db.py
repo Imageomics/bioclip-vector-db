@@ -64,6 +64,7 @@ class BioclipVectorDatabase:
         self._dataset = datasets.load_dataset(self._dataset_type.value, 
                                      split=split, 
                                      streaming=False)
+        print(self._dataset[0])
     
     def _init_collection(self):
         """ Initializes the collection for storing the vectors. """
@@ -150,7 +151,7 @@ def main():
     vdb = BioclipVectorDatabase(
         dataset_type=dataset, 
         collection_dir=output_dir, 
-        split="train")
+        split="")
     vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
