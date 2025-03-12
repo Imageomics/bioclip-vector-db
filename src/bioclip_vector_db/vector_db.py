@@ -2,6 +2,8 @@
 Author: Sreejith Menon 
 Executable script for setting up a database of vectors from the bioclip dataset
 """
+import os 
+os.environ['HF_HOME'] = '/fs/scratch/PAS2136/smenon/.cache/huggingface'
 
 import argparse
 import chromadb
@@ -56,9 +58,7 @@ class BioclipVectorDatabase:
                          split: str) -> datasets.Dataset:
         """ Loads the dataset from Hugging Face to memory. """
         if split is None:
-            logger.info(f"Loading entire dataset: {self._dataset_type.value}")
-            self._dataset = datasets.load_dataset(self._dataset_type.value, 
-                                         streaming=False)
+            raise ValueError("Split cannot be None. Please provide a valid split.")
         
         logger.info(f"Loading dataset: {self._dataset_type.value} for split: {split}")
         self._dataset = datasets.load_dataset(self._dataset_type.value, 
@@ -148,15 +148,17 @@ def main():
     args = parser.parse_args()
     dataset = args.dataset
     output_dir = args.output_dir
+    split = args.split
 
-    logger.info(f"Creating database for dataset: {dataset}")
+    logger.info(f"Creating database for dataset: {dataset} with split: {split}")
     logger.info(f"Creating database for dataset: {dataset.value}")
     logger.info(f"Output directory: {output_dir}")
+    logger.info(f"Resetting the database: {args.reset}")
 
     vdb = BioclipVectorDatabase(
         dataset_type=dataset, 
         collection_dir=output_dir, 
-        split=args.split)
+        split=split)
     vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
