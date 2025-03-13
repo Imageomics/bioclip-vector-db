@@ -2,9 +2,6 @@
 Author: Sreejith Menon 
 Executable script for setting up a database of vectors from the bioclip dataset
 """
-import os 
-os.environ['HF_HOME'] = '/fs/scratch/PAS2136/smenon/.cache/huggingface'
-
 import argparse
 import chromadb
 import datasets
@@ -83,16 +80,23 @@ class BioclipVectorDatabase:
         if self._dataset_type.name == HfDatasetType.BIRD.name:
             return list(map(lambda x: str(x), range(len(self._dataset))))
         elif self._dataset_type.name == HfDatasetType.TREE_OF_LIFE.name:
-            pass 
+            return list(map(lambda item: item["__key__"], self._dataset)) 
 
         raise ValueError(f"Dataset type: {self._dataset_type} not supported.")
 
     def _make_embeddings(self) -> List[List[float]]:
         """ Generates embeddings for each record in the dataset. """
+        if self._dataset_type.name == HfDatasetType.BIRD.name:
+            img_key = "image"
+        elif self._dataset_type.name == HfDatasetType.TREE_OF_LIFE.name:
+            img_key = "jpg"
+        else:
+            raise ValueError(f"Dataset type: {self._dataset_type} not supported.")
+        
         return list(
             map(
                 lambda i: self._classifier.create_image_features_for_image(
-                    self._dataset[i]["image"], 
+                    self._dataset[i][img_key], 
                     normalize=True).tolist(),
                 range(len(self._dataset)))
         )
