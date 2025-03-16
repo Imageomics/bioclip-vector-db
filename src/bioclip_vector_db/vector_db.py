@@ -61,19 +61,20 @@ class BioclipVectorDatabase:
         if split is None:
             raise ValueError("Split cannot be None. Please provide a valid split.")
         
+        logger.info(f"Loading dataset: {self._dataset_type.value} for split: {split}")
         if local_dataset is not None:
-            # TODO(smenon): Add support for reading from local disk.
-            location = local_dataset
-            logger.info(f"Loading dataset from local disk: {location}")
+            self._dataset = datasets.load_dataset(self._dataset_type.value, 
+                                                  data_files=local_dataset, 
+                                                  split=split, 
+                                                  streaming=False)
+            logger.info(f"Loading dataset from local disk: {local_dataset}")
         else:
-            location = self._dataset_type.value
-            logger.info(f"Loading dataset from Hugging Face: {location}")
-        
-        logger.info(f"Loading dataset: {location} for split: {split}")
-        self._dataset = datasets.load_dataset(location, 
+            self._dataset = datasets.load_dataset(self._dataset_type.value, 
                                               split=split, 
                                               streaming=False)
-            
+            logger.info(f"Loading dataset from Hugging Face: {location}")
+
+        
         logger.info(f"Dataset loaded with {len(self._dataset)} records.")
     
     def _init_collection(self):
@@ -197,15 +198,15 @@ def main():
     local_dataset = args.local_dataset
 
     logger.info(f"Creating database for dataset: {dataset} with split: {split}")
+    logger.info(f"Creating database for dataset: {dataset.value}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Resetting the database: {args.reset}")
 
     vdb = BioclipVectorDatabase(
         dataset_type=dataset, 
         collection_dir=output_dir, 
-        split=split, 
+        split=split,
         local_dataset=local_dataset)
-    
     vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
