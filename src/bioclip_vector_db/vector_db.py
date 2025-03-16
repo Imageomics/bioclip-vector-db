@@ -73,7 +73,6 @@ class BioclipVectorDatabase:
             self._dataset = datasets.load_dataset(self._dataset_type.value, 
                                               split=split, 
                                               streaming=False)
-            logger.info(f"Loading dataset from Hugging Face: {location}")
 
         
         logger.info(f"Dataset loaded with {len(self._dataset)} records.")
