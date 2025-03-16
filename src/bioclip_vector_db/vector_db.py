@@ -124,7 +124,7 @@ class BioclipVectorDatabase:
                 self._collection.add(embeddings=[embedding], ids=[id])
                 num_records += 1
 
-        logger.info(f"Database created with {len(num_records)} records.")
+        logger.info(f"Database created with {num_records} records.")
 
     def get_vector_database(self):
         self._init_collection()
