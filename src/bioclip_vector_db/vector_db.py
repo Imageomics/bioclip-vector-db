@@ -61,7 +61,7 @@ class BioclipVectorDatabase:
         self._dataset = datasets.load_dataset(self._dataset_type.value, 
                                      split=split, 
                                      streaming=False)
-        print(self._dataset[0])
+        logger.info(f"Dataset loaded with {len(self._dataset)} records.")
     
     def _init_collection(self):
         """ Initializes the collection for storing the vectors. """
@@ -75,17 +75,22 @@ class BioclipVectorDatabase:
             }
         )
 
-    def _make_ids(self) -> List[str]:
-        """ Generates unique ids for each record in the dataset. """
+    def _get_id(self, index: int) -> str:
+        """ Returns the id of the record at the given index. """
         if self._dataset_type.name == HfDatasetType.BIRD.name:
-            return list(map(lambda x: str(x), range(len(self._dataset))))
+            return str(index)
         elif self._dataset_type.name == HfDatasetType.TREE_OF_LIFE.name:
-            return list(map(lambda item: item["__key__"], self._dataset)) 
-
+            try:
+                return self._dataset[index]["__key__"]
+            except Exception as e:
+                logger.error(f"Error while fetching id for index: {index}")
+                logger.error(e)
+                return None
+        
         raise ValueError(f"Dataset type: {self._dataset_type} not supported.")
-
-    def _make_embeddings(self) -> List[List[float]]:
-        """ Generates embeddings for each record in the dataset. """
+    
+    def _get_embedding(self, index: int) -> List[float]:
+        """ Returns the embedding of the record at the given index. """
         if self._dataset_type.name == HfDatasetType.BIRD.name:
             img_key = "image"
         elif self._dataset_type.name == HfDatasetType.TREE_OF_LIFE.name:
@@ -93,13 +98,14 @@ class BioclipVectorDatabase:
         else:
             raise ValueError(f"Dataset type: {self._dataset_type} not supported.")
         
-        return list(
-            map(
-                lambda i: self._classifier.create_image_features_for_image(
-                    self._dataset[i][img_key], 
-                    normalize=True).tolist(),
-                range(len(self._dataset)))
-        )
+        try:
+            return self._classifier.create_image_features_for_image(
+                self._dataset[index][img_key], 
+                normalize=True).tolist
+        except Exception as e:
+            logger.error(f"Error while fetching embedding for index: {index}")
+            logger.error(e)
+            return None
     
     def load_database(self, reset: bool = False):
         if reset: 
@@ -107,12 +113,17 @@ class BioclipVectorDatabase:
             self._client.delete_collection(self._collection.name)
             self._init_collection()
         
-        ids = self._make_ids()
-        embeddings = self._make_embeddings()
-        assert len(ids) == len(embeddings), "Length of ids and embeddings should match."
+        num_records = 0
+        for i in tqdm(range(len(self._dataset))):
+            id = self._get_id(i)
+            embedding = self._get_embedding(i)
+            if id is None or embedding is None:
+                logger.warning(f"Skipping record with index: {i}")
+                continue
+            self._collection.add(embeddings=[embedding], ids=[id])
+            num_records += 1
 
-        self._collection.add(embeddings=embeddings, ids=ids)
-        logger.info(f"Database created with {len(ids)} records.")
+        logger.info(f"Database created with {len(num_records)} records.")
 
     def get_vector_database(self):
         self._init_collection()
