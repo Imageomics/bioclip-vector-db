@@ -101,7 +101,7 @@ class BioclipVectorDatabase:
         try:
             return self._classifier.create_image_features_for_image(
                 self._dataset[index][img_key], 
-                normalize=True).tolist
+                normalize=True).tolist()
         except Exception as e:
             logger.error(f"Error while fetching embedding for index: {index}")
             logger.error(e)
