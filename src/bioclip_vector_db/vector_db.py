@@ -63,11 +63,12 @@ class BioclipVectorDatabase:
         
         logger.info(f"Loading dataset: {self._dataset_type.value} for split: {split}")
         if local_dataset is not None:
+            logger.info(f"Loading dataset from local disk: {local_dataset}")
             self._dataset = datasets.load_dataset(self._dataset_type.value, 
-                                                  data_files=local_dataset, 
+                                                  data_files={split: local_dataset}, 
                                                   split=split, 
                                                   streaming=False)
-            logger.info(f"Loading dataset from local disk: {local_dataset}")
+
         else:
             self._dataset = datasets.load_dataset(self._dataset_type.value, 
                                               split=split, 
