@@ -114,17 +114,17 @@ class BioclipVectorDatabase:
             self._init_collection()
         
         num_records = 0
-        for iter in tqdm(range(10000)):
-            for i in tqdm(range(len(self._dataset))):
-                id = self._get_id(num_records)
-                embedding = self._get_embedding(i)
-                if id is None or embedding is None:
-                    logger.warning(f"Skipping record with index: {i}")
-                    continue
-                self._collection.add(embeddings=[embedding], ids=[id])
-                num_records += 1
+        
+        for i in tqdm(range(len(self._dataset))):
+            id = self._get_id(i)
+            embedding = self._get_embedding(i)
+            if id is None or embedding is None:
+                logger.warning(f"Skipping record with index: {i}")
+                continue
+            self._collection.add(embeddings=[embedding], ids=[id])
+            num_records += 1
 
-        logger.info(f"Database created with {num_records} records.")
+        logger.info(f"Database created with {len(num_records)} records.")
 
     def get_vector_database(self):
         self._init_collection()
