@@ -38,7 +38,8 @@ class HfDatasetType(enum.Enum):
 class BioclipVectorDatabase: 
     def __init__(self, dataset_type: HfDatasetType, 
                  collection_dir: str, 
-                 split: str):
+                 split: str, 
+                 local_dataset: str = None):
         self._dataset_type = dataset_type
         self._classifier = TreeOfLifeClassifier(
             device=_get_device())
@@ -48,19 +49,31 @@ class BioclipVectorDatabase:
         self._collection = None
         
         self._prepare_dataset(
-            split=split)
+            split=split, 
+            local_dataset=local_dataset
+        )
         self._init_collection()
         
     def _prepare_dataset(self, 
-                         split: str) -> datasets.Dataset:
+                         split: str,
+                         local_dataset: str) -> datasets.Dataset:
         """ Loads the dataset from Hugging Face to memory. """
         if split is None:
             raise ValueError("Split cannot be None. Please provide a valid split.")
         
-        logger.info(f"Loading dataset: {self._dataset_type.value} for split: {split}")
-        self._dataset = datasets.load_dataset(self._dataset_type.value, 
-                                     split=split, 
-                                     streaming=False)
+        if local_dataset is not None:
+            # TODO(smenon): Add support for reading from local disk.
+            location = local_dataset
+            logger.info(f"Loading dataset from local disk: {location}")
+        else:
+            location = self._dataset_type.value
+            logger.info(f"Loading dataset from Hugging Face: {location}")
+        
+        logger.info(f"Loading dataset: {location} for split: {split}")
+        self._dataset = datasets.load_dataset(location, 
+                                              split=split, 
+                                              streaming=False)
+            
         logger.info(f"Dataset loaded with {len(self._dataset)} records.")
     
     def _init_collection(self):
@@ -70,7 +83,7 @@ class BioclipVectorDatabase:
         self._collection = self._client.get_or_create_collection(
             name=self._dataset_type.name, 
             metadata={
-                "hnsw:space": "cosine",
+                "hnsw:space": "ip",
                 "hnsw:search_ef": 10
             }
         )
@@ -121,7 +134,7 @@ class BioclipVectorDatabase:
             if self._collection.get(id) is not None:
                 logger.info(f"Record with id: {id} already exists in the database. Skipping.")
                 continue
-            
+
             embedding = self._get_embedding(i)
             if id is None or embedding is None:
                 logger.warning(f"Skipping record with index: {i}")
@@ -149,38 +162,50 @@ def main():
         required=True,
         help="Dataset to use for creating the vector database"
     )
+
     parser.add_argument(
         "--output_dir",
         type=str,
         default=_DEFAULT_OUTPUT_DIR,
         help="Output directory to save the database"
     )
+
     parser.add_argument(
         "--reset",
         action="store_true",
         default=False,
         help="Reset the entire vector database, if unset, only the new records are added"
     )
+
     parser.add_argument(
         "--split", 
         type=str, 
         default="train", 
         help="Split of the dataset to use.")
+    
+    parser.add_argument(
+        "--local_dataset",
+        type=str,
+        default=None,
+        help="Path to the local dataset, if unspecified will attempt download form Hugging Face."
+    )
 
     args = parser.parse_args()
     dataset = args.dataset
     output_dir = args.output_dir
     split = args.split
+    local_dataset = args.local_dataset
 
     logger.info(f"Creating database for dataset: {dataset} with split: {split}")
-    logger.info(f"Creating database for dataset: {dataset.value}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Resetting the database: {args.reset}")
 
     vdb = BioclipVectorDatabase(
         dataset_type=dataset, 
         collection_dir=output_dir, 
-        split=split)
+        split=split, 
+        local_dataset=local_dataset)
+    
     vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
