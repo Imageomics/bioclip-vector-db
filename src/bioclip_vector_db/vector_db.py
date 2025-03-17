@@ -132,6 +132,11 @@ class BioclipVectorDatabase:
         for i in tqdm(range(len(self._dataset))):
             id = self._get_id(i)
 
+            existing_docs = self._collection.get(id)["documents"]
+            if  existing_docs is not None and len(existing_docs) > 0:
+                logger.info(f"Record with id: {id} already exists in the database. Skipping.")
+                continue
+
             embedding = self._get_embedding(i)
             if id is None or embedding is None:
                 logger.warning(f"Skipping record with index: {i}")
@@ -140,7 +145,7 @@ class BioclipVectorDatabase:
             self._collection.add(embeddings=[embedding], ids=[id])
             num_records += 1
 
-        logger.info(f"Database created with {len(num_records)} records.")
+        logger.info(f"Database loaded with {num_records} records.")
 
     def get_vector_database(self):
         self._init_collection()
