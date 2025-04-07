@@ -167,7 +167,7 @@ class BioclipVectorDatabase:
 
             self._collection.add(embeddings=[embedding], 
                                  ids=[id],
-                                 metadatas = prediction)
+                                 metadatas = [prediction])
             num_records += 1
 
         logger.info(f"Database loaded with {num_records} records.")
