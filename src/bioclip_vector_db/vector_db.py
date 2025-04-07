@@ -3,6 +3,7 @@ Author: Sreejith Menon
 Executable script for setting up a database of vectors from the bioclip dataset
 """
 import argparse
+import PIL
 import chromadb
 import datasets
 import enum
@@ -10,7 +11,7 @@ import logging
 import os
 import torch 
 
-from bioclip.predict import TreeOfLifeClassifier
+from bioclip.predict import TreeOfLifeClassifier, Rank
 from tqdm import tqdm
 from typing import List
 
@@ -19,6 +20,8 @@ _DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(),
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
+
+_EXCLUDE_KEYS = {'file_name', 'score'}
 
 def _get_device() -> torch.device:
     if torch.cuda.is_available():
@@ -103,8 +106,8 @@ class BioclipVectorDatabase:
         
         raise ValueError(f"Dataset type: {self._dataset_type} not supported.")
     
-    def _get_embedding(self, index: int) -> List[float]:
-        """ Returns the embedding of the record at the given index. """
+    def _get_image(self, index) -> PIL.Image.Image:
+        """ Returns the image of the record at the given index. """
         if self._dataset_type.name == HfDatasetType.BIRD.name:
             img_key = "image"
         elif self._dataset_type.name == HfDatasetType.TREE_OF_LIFE.name:
@@ -112,14 +115,33 @@ class BioclipVectorDatabase:
         else:
             raise ValueError(f"Dataset type: {self._dataset_type} not supported.")
         
+        return self._dataset[index][img_key]
+    
+    def _get_embedding(self, index: int) -> List[float]:
+        """ Returns the embedding of the record at the given index. """
         try:
             return self._classifier.create_image_features_for_image(
-                self._dataset[index][img_key], 
+                self._get_image(index), 
                 normalize=True).tolist()
         except Exception as e:
             logger.error(f"Error while fetching embedding for index: {index}")
             logger.error(e)
             return None
+    
+    def _get_prediction(self, index: int) -> str:
+        """ Returns the prediction of the record at the given index. """
+        scores = self._classifier.predict([self._get_image(index)], Rank.SPECIES)
+        scores = sorted(scores, key=lambda item: item['score'], reverse=True)
+
+        # only return predictions from the highest score item.
+        if scores is None or len(scores) == 0:
+            logger.error(f"Error while fetching prediction for index: {index}")
+            return None
+        
+        # return the entire taxonomy ranks except the excluded keys.
+        return dict(filter(lambda item: item[0] not in _EXCLUDE_KEYS, 
+                               scores[0].items()))
+        
     
     def load_database(self, reset: bool = False):
         if reset: 
@@ -138,11 +160,14 @@ class BioclipVectorDatabase:
                 continue
 
             embedding = self._get_embedding(i)
+            prediction = self._get_prediction(i)
             if id is None or embedding is None:
                 logger.warning(f"Skipping record with index: {i}")
                 continue
 
-            self._collection.add(embeddings=[embedding], ids=[id])
+            self._collection.add(embeddings=[embedding], 
+                                 ids=[id],
+                                 metadatas = prediction)
             num_records += 1
 
         logger.info(f"Database loaded with {num_records} records.")
@@ -150,9 +175,6 @@ class BioclipVectorDatabase:
     def get_vector_database(self):
         self._init_collection()
         return self._collection
-    
-    def query_neighbors(self, image, num_neightbors=5):
-        pass 
 
 def main():
     parser = argparse.ArgumentParser()
