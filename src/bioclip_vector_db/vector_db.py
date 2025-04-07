@@ -128,8 +128,8 @@ class BioclipVectorDatabase:
             logger.error(e)
             return None
     
-    def _get_prediction(self, index: int) -> str:
-        """ Returns the prediction of the record at the given index. """
+    def _get_prediction(self, index: int) -> dict or None:
+        """ Returns the prediction of the record at the given index as a dictionary or None if an error occurs. """
         scores = self._classifier.predict([self._get_image(index)], Rank.SPECIES)
         scores = sorted(scores, key=lambda item: item['score'], reverse=True)
 
