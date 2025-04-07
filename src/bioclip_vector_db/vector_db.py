@@ -13,7 +13,7 @@ import torch
 
 from bioclip.predict import TreeOfLifeClassifier, Rank
 from tqdm import tqdm
-from typing import List
+from typing import List, Union
 
 _DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), 
                                    "vector_db")
@@ -128,7 +128,7 @@ class BioclipVectorDatabase:
             logger.error(e)
             return None
     
-    def _get_prediction(self, index: int) -> dict or None:
+    def _get_prediction(self, index: int) -> Union(dict, None):
         """ Returns the prediction of the record at the given index as a dictionary or None if an error occurs. """
         scores = self._classifier.predict([self._get_image(index)], Rank.SPECIES)
         scores = sorted(scores, key=lambda item: item['score'], reverse=True)
