@@ -14,7 +14,8 @@ import webdataset as wds
 import PIL
 import numpy as np
 
-from bioclip.predict import TreeOfLifeClassifier
+from collections import OrderedDict
+from bioclip.predict import TreeOfLifeClassifier, Rank
 from tqdm import tqdm
 from typing import List
 
@@ -25,6 +26,7 @@ logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
 
 _LOCAL_DATASET_KEYS = ("__key__", "jpg")
+_EXCLUDE_KEYS = {'file_name', 'score'}
 
 def _get_device() -> torch.device:
     if torch.cuda.is_available():
@@ -154,23 +156,44 @@ class BioclipVectorDatabase:
 
         logger.info(f"Database loaded with {num_records} records.")
 
+    @staticmethod
+    def _preprocess_img(img: torch.Tensor) -> PIL.Image:
+        np_array = img.numpy().transpose(1,2,0)
+        pil_array = (np_array * 255).astype(np.uint8)
+        return PIL.Image.fromarray(pil_array)
+
+    @staticmethod
+    def _post_process_prediction(all_scores):
+        """ Post process the predictions to only pick the prediction with the highest score"""
+        # THIS IS FRAGILE and probably needs to be fixed.
+        score_dict = OrderedDict()
+        for score in all_scores:
+            if score_dict.get(score["file_name"]) is None:
+                score_dict[score["file_name"]] = []
+            score_dict[score["file_name"]].append(score)
+         
+        for key in score_dict.keys():
+            score_dict[key] = sorted(score_dict[key], key=lambda item: item['score'], reverse=True)[0]
+        
+        return list(score_dict.values())
+
     def _load_database_local(self):
         num_records = 0
 
         for data_batch in tqdm(self._dataset):
             assert len(data_batch) == len(_LOCAL_DATASET_KEYS)
             ids = data_batch[0]
-
-            imgs = []
-            for img in data_batch[1]:
-                np_array = img.numpy().transpose(1,2,0)
-                pil_array = (np_array * 255).astype(np.uint8)
-                imgs.append(PIL.Image.fromarray(pil_array))
+            imgs = list(map(lambda img: BioclipVectorDatabase._preprocess_img(img),
+                            data_batch[1]))
+            
 
             embeddings = list(map(lambda x: x.tolist(), 
                                   self._classifier.create_image_features(imgs, 
                                                                          normalize=True)))
-            self._collection.add(embeddings=embeddings, ids=ids)
+            predictions = BioclipVectorDatabase._post_process_prediction(
+                                    self._classifier.predict(imgs, Rank.SPECIES))
+                
+            self._collection.add(embeddings=embeddings, ids=ids, metadatas=predictions)
 
             num_records += len(ids)
 
@@ -232,6 +255,13 @@ def main():
         help="Path to the local dataset, if unspecified will attempt download form Hugging Face."
     )
 
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=10,
+        help="Specifies the batch size which determine the number of datapoints which will be read at once from the dataset."
+    )
+
     args = parser.parse_args()
     dataset = args.dataset
     output_dir = args.output_dir
@@ -247,7 +277,8 @@ def main():
         dataset_type=dataset, 
         collection_dir=output_dir, 
         split=split,
-        local_dataset=local_dataset)
+        local_dataset=local_dataset,
+        batch_size=args.batch_size)
     vdb.load_database(reset=args.reset)
 
 if __name__ == "__main__":
