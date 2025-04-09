@@ -3,12 +3,16 @@ Author: Sreejith Menon
 Executable script for setting up a database of vectors from the bioclip dataset
 """
 import argparse
+import PIL.Image
 import chromadb
 import datasets
 import enum
 import logging
 import os
 import torch 
+import webdataset as wds
+import PIL
+import numpy as np
 
 from bioclip.predict import TreeOfLifeClassifier
 from tqdm import tqdm
@@ -19,6 +23,8 @@ _DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(),
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
+
+_LOCAL_DATASET_KEYS = ("__key__", "jpg")
 
 def _get_device() -> torch.device:
     if torch.cuda.is_available():
@@ -34,12 +40,14 @@ def _get_device() -> torch.device:
 class HfDatasetType(enum.Enum):
     BIRD = "Somnath01/Birds_Species"
     TREE_OF_LIFE = "imageomics/TreeOfLife-10M"
+    TREE_OF_LIFE_LOCAL = "local_tree_of_life"
 
 class BioclipVectorDatabase: 
     def __init__(self, dataset_type: HfDatasetType, 
                  collection_dir: str, 
                  split: str, 
-                 local_dataset: str = None):
+                 local_dataset: str = None,
+                 batch_size: int = 10):
         self._dataset_type = dataset_type
         self._classifier = TreeOfLifeClassifier(
             device=_get_device())
@@ -47,6 +55,8 @@ class BioclipVectorDatabase:
         self._collection_dir = collection_dir
         self._client = None
         self._collection = None
+        self._use_local_dataset = local_dataset is not None
+        self._batch_size = batch_size
         
         self._prepare_dataset(
             split=split, 
@@ -62,20 +72,21 @@ class BioclipVectorDatabase:
             raise ValueError("Split cannot be None. Please provide a valid split.")
         
         logger.info(f"Loading dataset: {self._dataset_type.value} for split: {split}")
-        if local_dataset is not None:
+        if self._use_local_dataset:
             logger.info(f"Loading dataset from local disk: {local_dataset}")
-            self._dataset = datasets.load_dataset(self._dataset_type.value, 
-                                                  data_files={split: local_dataset}, 
-                                                  split=split, 
-                                                  streaming=False)
+            
+            # iterating through the dataset will fetch {batch_size} records at once.
+            self._dataset = wds.DataPipeline(wds.SimpleShardList(local_dataset), 
+                                             wds.tarfile_to_samples(), 
+                                             wds.decode("torchrgb"), 
+                                             wds.to_tuple(*_LOCAL_DATASET_KEYS),
+                                             wds.batched(self._batch_size))
 
         else:
             self._dataset = datasets.load_dataset(self._dataset_type.value, 
                                               split=split, 
                                               streaming=False)
-
-        
-        logger.info(f"Dataset loaded with {len(self._dataset)} records.")
+            logger.info(f"Dataset loaded with {len(self._dataset)} records.")
     
     def _init_collection(self):
         """ Initializes the collection for storing the vectors. """
@@ -121,12 +132,8 @@ class BioclipVectorDatabase:
             logger.error(e)
             return None
     
-    def load_database(self, reset: bool = False):
-        if reset: 
-            logger.info("Resetting the database.")
-            self._client.delete_collection(self._collection.name)
-            self._init_collection()
-        
+    def _load_database_web(self):
+        """ Helper function to load the database if the dataset is a non-local one. """
         num_records = 0
         
         for i in tqdm(range(len(self._dataset))):
@@ -146,6 +153,39 @@ class BioclipVectorDatabase:
             num_records += 1
 
         logger.info(f"Database loaded with {num_records} records.")
+
+    def _load_database_local(self):
+        num_records = 0
+
+        for data_batch in tqdm(self._dataset):
+            assert len(data_batch) == len(_LOCAL_DATASET_KEYS)
+            ids = data_batch[0]
+
+            imgs = []
+            for img in data_batch[1]:
+                np_array = img.numpy().transpose(1,2,0)
+                pil_array = (np_array * 255).astype(np.uint8)
+                imgs.append(PIL.Image.fromarray(pil_array))
+
+            embeddings = list(map(lambda x: x.tolist(), 
+                                  self._classifier.create_image_features(imgs, 
+                                                                         normalize=True)))
+            self._collection.add(embeddings=embeddings, ids=ids)
+
+            num_records += len(ids)
+
+        logger.info(f"Database loaded with {num_records} records.")
+
+    def load_database(self, reset: bool = False):
+        if reset: 
+            logger.info("Resetting the database.")
+            self._client.delete_collection(self._collection.name)
+            self._init_collection()
+        
+        if self._use_local_dataset:
+            self._load_database_local()
+        else:
+            self._load_database_web()
 
     def get_vector_database(self):
         self._init_collection()
