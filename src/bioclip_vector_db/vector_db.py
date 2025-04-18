@@ -47,16 +47,19 @@ class HfDatasetType(enum.Enum):
 
 def _process_taxon_tags(tag: str) -> dict:
     """ Helper function to parse and process the taxon tags. """
+
+    # this regex supports non-ascii characters 
+    # in the taxa classifications.
     regex = re.compile(
         r'a photo of '
-        r'(?:kingdom ([^\s]+) )?' # Optional kingdom, capture non-whitespace
-        r'(?:phylum ([^\s]+) )?'  # Optional phylum, capture non-whitespace
-        r'(?:class ([^\s]+) )?'   # Optional class, capture non-whitespace
-        r'(?:order ([^\s]+) )?'   # Optional order, capture non-whitespace
-        r'(?:family ([^\s]+) )?'  # Optional family, capture non-whitespace
-        r'(?:genus ([^\s]+) )?'   # Optional genus, capture non-whitespace
-        r'(?:species [^\s]+(?: [^\s]+)* )?'   # Optional species (value ignored), match one or more words
-        r'with common name (.*)\.' # Common name, capture any characters
+        r'(?:kingdom ([^\s]+) )?'
+        r'(?:phylum ([^\s]+) )?'
+        r'(?:class ([^\s]+) )?'
+        r'(?:order ([^\s]+) )?'
+        r'(?:family ([^\s]+) )?'
+        r'(?:genus ([^\s]+) )?'
+        r'(?:species [^\s]+(?: [^\s]+)* )?'
+        r'with common name (.*)\.'
     )
 
     rank_keys = ['kingdom', 
