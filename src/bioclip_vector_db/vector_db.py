@@ -61,7 +61,6 @@ def _process_taxon_tags(tag: str) -> dict:
         r'(?:species [^\s]+(?: [^\s]+)* )?'
         r'with common name (.*)\.'
     )
-
     rank_keys = ['kingdom', 
                  'phylum', 
                  'class', 
