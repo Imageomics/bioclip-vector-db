@@ -13,6 +13,7 @@ import torch
 import webdataset as wds
 import PIL
 import numpy as np
+import re
 
 from collections import OrderedDict
 from bioclip.predict import TreeOfLifeClassifier, Rank
@@ -25,7 +26,7 @@ _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
 
-_LOCAL_DATASET_KEYS = ("__key__", "jpg")
+_LOCAL_DATASET_KEYS = ("__key__", "jpg", "taxontag_com.txt")
 _EXCLUDE_KEYS = {'file_name', 'score'}
 
 def _get_device() -> torch.device:
@@ -43,6 +44,42 @@ class HfDatasetType(enum.Enum):
     BIRD = "Somnath01/Birds_Species"
     TREE_OF_LIFE = "imageomics/TreeOfLife-10M"
     TREE_OF_LIFE_LOCAL = "local_tree_of_life"
+
+def _process_taxon_tags(tag: str) -> dict:
+    """ Helper function to parse and process the taxon tags. """
+    regex = re.compile(
+        r'a photo of '
+        r'(?:kingdom ([^\s]+) )?' # Optional kingdom, capture non-whitespace
+        r'(?:phylum ([^\s]+) )?'  # Optional phylum, capture non-whitespace
+        r'(?:class ([^\s]+) )?'   # Optional class, capture non-whitespace
+        r'(?:order ([^\s]+) )?'   # Optional order, capture non-whitespace
+        r'(?:family ([^\s]+) )?'  # Optional family, capture non-whitespace
+        r'(?:genus ([^\s]+) )?'   # Optional genus, capture non-whitespace
+        r'(?:species [^\s]+(?: [^\s]+)* )?'   # Optional species (value ignored), match one or more words
+        r'with common name (.*)\.' # Common name, capture any characters
+    )
+
+    rank_keys = ['kingdom', 
+                 'phylum', 
+                 'class', 
+                 'order', 
+                 'family', 
+                 'genus', 
+                 'common name'
+                ]
+
+    match = regex.search(tag)
+
+    if match:
+        return {key: val if val is not None else "" 
+                  for key, val in dict(
+                      zip(rank_keys, match.groups()))
+                        .items()}
+    
+    logger.warning(f"Failed to parse taxon tag: {tag}\n\n\n")
+    # return default values.
+    return {rank: "" for rank in rank_keys}
+
 
 class BioclipVectorDatabase: 
     def __init__(self, dataset_type: HfDatasetType, 
@@ -162,21 +199,6 @@ class BioclipVectorDatabase:
         pil_array = (np_array * 255).astype(np.uint8)
         return PIL.Image.fromarray(pil_array)
 
-    @staticmethod
-    def _post_process_prediction(all_scores):
-        """ Post process the predictions to only pick the prediction with the highest score"""
-        # THIS IS FRAGILE and probably needs to be fixed.
-        score_dict = OrderedDict()
-        for score in all_scores:
-            if score_dict.get(score["file_name"]) is None:
-                score_dict[score["file_name"]] = []
-            score_dict[score["file_name"]].append(score)
-         
-        for key in score_dict.keys():
-            score_dict[key] = sorted(score_dict[key], key=lambda item: item['score'], reverse=True)[0]
-        
-        return list(score_dict.values())
-
     def _load_database_local(self):
         num_records = 0
 
@@ -185,15 +207,11 @@ class BioclipVectorDatabase:
             ids = data_batch[0]
             imgs = list(map(lambda img: BioclipVectorDatabase._preprocess_img(img),
                             data_batch[1]))
-            
-
+            taxon_tags = list(map(lambda tag: _process_taxon_tags(tag), data_batch[2]))
             embeddings = list(map(lambda x: x.tolist(), 
                                   self._classifier.create_image_features(imgs, 
                                                                          normalize=True)))
-            predictions = BioclipVectorDatabase._post_process_prediction(
-                                    self._classifier.predict(imgs, Rank.SPECIES))
-                
-            self._collection.add(embeddings=embeddings, ids=ids, metadatas=predictions)
+            self._collection.add(embeddings=embeddings, ids=ids, metadatas=taxon_tags)
 
             num_records += len(ids)
 
@@ -214,9 +232,6 @@ class BioclipVectorDatabase:
         self._init_collection()
         return self._collection
     
-    def query_neighbors(self, image, num_neightbors=5):
-        pass 
-
 def main():
     parser = argparse.ArgumentParser()
 
