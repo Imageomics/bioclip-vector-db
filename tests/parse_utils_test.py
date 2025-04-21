@@ -16,6 +16,7 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "",
                 "species": "",
                 "common name": "",
+                "raw_tag": "",
             },
         )
 
@@ -35,6 +36,7 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "",
                 "species": "",
                 "common name": "",
+                "raw_tag": "a photo of kingdom  phylum  class  order  family  genus  species  with common name .",
             },
         )
 
@@ -54,6 +56,7 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "a_genus",
                 "species": "a_species",
                 "common name": "a_common_name",
+                "raw_tag": "a photo of kingdom a_kingdom phylum a_phylum class a_class order an_order family a_family genus a_genus species a_species with common name a_common_name.",
             },
         )
 
@@ -74,6 +77,7 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "a_genus",
                 "species": "a_species suffix",
                 "common name": "a_common_name with long suffix",
+                "raw_tag": "a photo of kingdom a_kingdom suffix phylum a_phylum class a_class order an_order family a_family genus a_genus species a_species suffix with common name a_common_name with long suffix.",
             },
         )
 
@@ -93,6 +97,9 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "a_genus",
                 "species": "a_species",
                 "common name": "",
+                "raw_tag": "a photo of kingdom a_kingdom phylum a_phylum class "
+                            "a_class order an_order family a_family genus a_genus "
+                            "species a_species with common name .",
             },
         )
 
@@ -112,6 +119,9 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "a_genus",
                 "species": "",
                 "common name": "",
+                "raw_tag": "a photo of kingdom a_kingdom phylum a_phylum class "
+                          "a_class order an_order family a_family genus a_genus "
+                          "species  with common name .",
             },
         )
 
@@ -131,13 +141,15 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "a_genus",
                 "species": "a_species",
                 "common name": "a_common_name",
+                "raw_tag": "a photo of kingdom  phylum a_phylum class a_class order "
+                          "an_order family a_family genus a_genus species a_species with common name a_common_name.",
             },
         )
 
     def test_only_species_common_name_ok(self):
         self.assertDictEqual(
             parse_utils.parse_taxontag_com(
-               "a photo of species species with common name common_name.",
+                "a photo of species species with common name common_name.",
                 MagicMock(),
             ),
             {
@@ -149,13 +161,14 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "",
                 "species": "species",
                 "common name": "common_name",
+                "raw_tag": "a photo of species species with common name common_name.",
             },
         )
 
     def test_only_kingdom_species_ok(self):
         self.assertDictEqual(
             parse_utils.parse_taxontag_com(
-               "a photo of kingdom a_kingdom species a_species.",
+                "a photo of kingdom a_kingdom species a_species.",
                 MagicMock(),
             ),
             {
@@ -167,5 +180,29 @@ class TestParseUtils(unittest.TestCase):
                 "genus": "",
                 "species": "a_species",
                 "common name": "",
+                "raw_tag": "a photo of kingdom a_kingdom species a_species.",
             },
         )
+
+    def test_actual_example(self):
+        self.maxDiff = None
+        self.assertDictEqual(
+            parse_utils.parse_taxontag_com(
+                "a photo of kingdom Animalia phylum Arthropoda "
+                "class Insecta order Lepidoptera family Geometridae genus Charissa species mucidaria with common name coppery taupe.",
+                MagicMock(),
+            ),
+            {
+                "kingdom": "Animalia",
+                "phylum": "Arthropoda",
+                "class": "Insecta",
+                "order": "Lepidoptera",
+                "family": "Geometridae",
+                "genus": "Charissa",
+                "species": "mucidaria",
+                "common name": "coppery taupe",
+                "raw_tag":  "a photo of kingdom Animalia phylum Arthropoda "
+                             "class Insecta order Lepidoptera family Geometridae "
+                             "genus Charissa species mucidaria with common name coppery taupe.",
+            },
+        ) 

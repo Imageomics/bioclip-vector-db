@@ -46,14 +46,20 @@ def parse_taxontag_com(tag: str, logger: logging.Logger) -> Dict:
 
     match = regex.search(tag)
 
+    taxa_ranks = {rank: "" for rank in rank_keys}
+
     if match:
-        return {
+        taxa_ranks = {
             key: val.strip() if val is not None else ""
             for key, val in dict(zip(rank_keys, match.groups())).items()
         }
-
-    logger.warning(f"Failed to parse taxon tag: {tag}\n")
+    else:
+        logger.warning(f"Failed to parse taxon tag: {tag}\n")
+        
+    taxa_ranks["raw_tag"] = tag
+    
+    
 
     # return default values.
-    # print({rank: "" for rank in rank_keys})
-    return {rank: "" for rank in rank_keys}
+    # logger.info(f"Parsed taxon tag: {taxa_ranks}\n")
+    return taxa_ranks
