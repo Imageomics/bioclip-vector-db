@@ -1,7 +1,8 @@
 numpy==1.*
 torch
 datasets
-pytorch
+torch
 pybioclip
 chromadb
 tqdm
+webdataset
