@@ -16,11 +16,10 @@ import PIL
 import numpy as np
 import re
 
-from collections import OrderedDict
-from bioclip.predict import TreeOfLifeClassifier, Rank
+from bioclip.predict import TreeOfLifeClassifier
 from tqdm import tqdm
 from typing import List
-import parse_utils
+from . import parse_utils
 
 _DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), "vector_db")
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
