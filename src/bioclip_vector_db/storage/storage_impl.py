@@ -8,13 +8,6 @@ _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
 
-
-def get_storage_interface() -> StorageInterface:
-    """
-    Returns an instance of the StorageInterface.
-    """
-    return Chroma()
-
 class Chroma(StorageInterface):
     def init(self, name: str, **kwargs):
         if "metadata" not in kwargs:
