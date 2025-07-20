@@ -41,6 +41,7 @@ def _get_device() -> torch.device:
         logger.warning("CUDA and MPS are not available. Default to CPU")
         return torch.device("cpu")
 
+
 class BioclipVectorDatabase:
     def __init__(
         self,
@@ -87,9 +88,11 @@ class BioclipVectorDatabase:
 
     def _init_collection(self):
         """Initializes the collection for storing the vectors."""
-        self._storage = storage_factory.get_storage(storage_type=storage_factory.StorageEnum.CHROMADB,
-                                                        dataset_type=self._dataset_type,
-                                                        collection_dir=self._collection_dir)
+        self._storage = storage_factory.get_storage(
+            storage_type=storage_factory.StorageEnum.CHROMADB,
+            dataset_type=self._dataset_type,
+            collection_dir=self._collection_dir,
+        )
 
     def _get_id(self, index: int) -> str:
         """Returns the id of the record at the given index."""
@@ -177,7 +180,9 @@ class BioclipVectorDatabase:
                     self._classifier.create_image_features(imgs, normalize=True),
                 )
             )
-            self._storage.batch_add_embeddings(embeddings=embeddings, ids=ids, metadatas=taxon_tags)
+            self._storage.batch_add_embeddings(
+                embeddings=embeddings, ids=ids, metadatas=taxon_tags
+            )
 
             num_records += len(ids)
 
