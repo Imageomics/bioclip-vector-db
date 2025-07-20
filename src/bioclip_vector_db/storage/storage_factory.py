@@ -28,5 +28,5 @@ def get_storage(storage_type: StorageEnum, dataset_type: HfDatasetType, **kwargs
         return chroma.init(dataset_type.name, 
                            collection_dir=kwargs["collection_dir"],
                            metadata={"hnsw:space": "ip", "hnsw:search_ef": 10})
-    else:
-        raise ValueError(f"Invalid storage type: {storage_type}")
+
+    raise ValueError(f"Invalid storage type: {storage_type}")
