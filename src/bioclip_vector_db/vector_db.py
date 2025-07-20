@@ -14,12 +14,13 @@ import torch
 import webdataset as wds
 import PIL
 import numpy as np
-import re
+import storage.storage_factory as storage_factory
 
 from bioclip.predict import TreeOfLifeClassifier
 from tqdm import tqdm
 from typing import List
 from . import parse_utils
+from storage.storage_interface import StorageInterface
 
 _DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), "vector_db")
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
@@ -40,17 +41,10 @@ def _get_device() -> torch.device:
         logger.warning("CUDA and MPS are not available. Default to CPU")
         return torch.device("cpu")
 
-
-class HfDatasetType(enum.Enum):
-    BIRD = "Somnath01/Birds_Species"
-    TREE_OF_LIFE = "imageomics/TreeOfLife-10M"
-    TREE_OF_LIFE_LOCAL = "local_tree_of_life"
-
-
 class BioclipVectorDatabase:
     def __init__(
         self,
-        dataset_type: HfDatasetType,
+        dataset_type: storage_factory.HfDatasetType,
         collection_dir: str,
         split: str,
         local_dataset: str = None,
@@ -61,7 +55,7 @@ class BioclipVectorDatabase:
         self._dataset = None
         self._collection_dir = collection_dir
         self._client = None
-        self._collection = None
+        self._storage = None
         self._use_local_dataset = local_dataset is not None
         self._batch_size = batch_size
 
@@ -94,18 +88,15 @@ class BioclipVectorDatabase:
 
     def _init_collection(self):
         """Initializes the collection for storing the vectors."""
-        self._client = chromadb.PersistentClient(path=self._collection_dir)
-
-        self._collection = self._client.get_or_create_collection(
-            name=self._dataset_type.name,
-            metadata={"hnsw:space": "ip", "hnsw:search_ef": 10},
-        )
+        self._storage = storage_factory.get_storage(storage_type=storage_factory.StorageEnum.CHROMADB,
+                                                        dataset_type=self._dataset_type,
+                                                        collection_dir=self._collection_dir)
 
     def _get_id(self, index: int) -> str:
         """Returns the id of the record at the given index."""
-        if self._dataset_type.name == HfDatasetType.BIRD.name:
+        if self._dataset_type.name == storage_factory.HfDatasetType.BIRD.name:
             return str(index)
-        elif self._dataset_type.name == HfDatasetType.TREE_OF_LIFE.name:
+        elif self._dataset_type.name == storage_factory.HfDatasetType.TREE_OF_LIFE.name:
             try:
                 return self._dataset[index]["__key__"]
             except Exception as e:
@@ -117,9 +108,9 @@ class BioclipVectorDatabase:
 
     def _get_embedding(self, index: int) -> List[float]:
         """Returns the embedding of the record at the given index."""
-        if self._dataset_type.name == HfDatasetType.BIRD.name:
+        if self._dataset_type.name == storage_factory.HfDatasetType.BIRD.name:
             img_key = "image"
-        elif self._dataset_type.name == HfDatasetType.TREE_OF_LIFE.name:
+        elif self._dataset_type.name == storage_factory.HfDatasetType.TREE_OF_LIFE.name:
             img_key = "jpg"
         else:
             raise ValueError(f"Dataset type: {self._dataset_type} not supported.")
@@ -140,7 +131,7 @@ class BioclipVectorDatabase:
         for i in tqdm(range(len(self._dataset))):
             id = self._get_id(i)
 
-            existing_docs = self._collection.get(id)["documents"]
+            existing_docs = self._storage.query(id)
             if existing_docs is not None and len(existing_docs) > 0:
                 logger.info(
                     f"Record with id: {id} already exists in the database. Skipping."
@@ -152,7 +143,7 @@ class BioclipVectorDatabase:
                 logger.warning(f"Skipping record with index: {i}")
                 continue
 
-            self._collection.add(embeddings=[embedding], ids=[id])
+            self._storage.add_embedding(embeddings=[embedding], ids=[id])
             num_records += 1
 
         logger.info(f"Database loaded with {num_records} records.")
@@ -187,7 +178,7 @@ class BioclipVectorDatabase:
                     self._classifier.create_image_features(imgs, normalize=True),
                 )
             )
-            self._collection.add(embeddings=embeddings, ids=ids, metadatas=taxon_tags)
+            self._storage.batch_add_embeddings(embeddings=embeddings, ids=ids, metadatas=taxon_tags)
 
             num_records += len(ids)
 
@@ -196,7 +187,7 @@ class BioclipVectorDatabase:
     def load_database(self, reset: bool = False):
         if reset:
             logger.info("Resetting the database.")
-            self._client.delete_collection(self._collection.name)
+            # self._client.delete_collection(self._collection.name)
             self._init_collection()
 
         if self._use_local_dataset:
@@ -214,8 +205,8 @@ def main():
 
     parser.add_argument(
         "--dataset",
-        type=lambda s: HfDatasetType[s.upper()],
-        choices=list(HfDatasetType),
+        type=lambda s: storage_factory.HfDatasetType[s.upper()],
+        choices=list(storage_factory.HfDatasetType),
         required=True,
         help="Dataset to use for creating the vector database",
     )
