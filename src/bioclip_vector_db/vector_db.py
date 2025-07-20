@@ -19,7 +19,7 @@ import storage.storage_factory as storage_factory
 from bioclip.predict import TreeOfLifeClassifier
 from tqdm import tqdm
 from typing import List
-from . import parse_utils
+import parse_utils
 from storage.storage_interface import StorageInterface
 
 _DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), "vector_db")
@@ -54,7 +54,6 @@ class BioclipVectorDatabase:
         self._classifier = TreeOfLifeClassifier(device=_get_device())
         self._dataset = None
         self._collection_dir = collection_dir
-        self._client = None
         self._storage = None
         self._use_local_dataset = local_dataset is not None
         self._batch_size = batch_size
@@ -187,17 +186,12 @@ class BioclipVectorDatabase:
     def load_database(self, reset: bool = False):
         if reset:
             logger.info("Resetting the database.")
-            # self._client.delete_collection(self._collection.name)
-            self._init_collection()
+            self._storage.reset(force=True)
 
         if self._use_local_dataset:
             self._load_database_local()
         else:
             self._load_database_web()
-
-    def get_vector_database(self):
-        self._init_collection()
-        return self._collection
 
 
 def main():
