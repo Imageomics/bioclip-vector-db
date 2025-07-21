@@ -46,7 +46,7 @@ class BioclipVectorDatabase:
     def __init__(
         self,
         dataset_type: storage_factory.HfDatasetType,
-        collection_dir: str,
+        storage: StorageInterface,
         split: str,
         local_dataset: str = None,
         batch_size: int = 10,
@@ -54,13 +54,11 @@ class BioclipVectorDatabase:
         self._dataset_type = dataset_type
         self._classifier = TreeOfLifeClassifier(device=_get_device())
         self._dataset = None
-        self._collection_dir = collection_dir
-        self._storage = None
+        self._storage = storage
         self._use_local_dataset = local_dataset is not None
         self._batch_size = batch_size
 
         self._prepare_dataset(split=split, local_dataset=local_dataset)
-        self._init_collection()
 
     def _prepare_dataset(self, split: str, local_dataset: str) -> datasets.Dataset:
         """Loads the dataset from Hugging Face to memory."""
@@ -85,14 +83,6 @@ class BioclipVectorDatabase:
                 self._dataset_type.value, split=split, streaming=False
             )
             logger.info(f"Dataset loaded with {len(self._dataset)} records.")
-
-    def _init_collection(self):
-        """Initializes the collection for storing the vectors."""
-        self._storage = storage_factory.get_storage(
-            storage_type=storage_factory.StorageEnum.CHROMADB,
-            dataset_type=self._dataset_type,
-            collection_dir=self._collection_dir,
-        )
 
     def _get_id(self, index: int) -> str:
         """Returns the id of the record at the given index."""
@@ -188,11 +178,7 @@ class BioclipVectorDatabase:
 
         logger.info(f"Database loaded with {num_records} records.")
 
-    def load_database(self, reset: bool = False):
-        if reset:
-            logger.info("Resetting the database.")
-            self._storage.reset(force=True)
-
+    def load_database(self):
         if self._use_local_dataset:
             self._load_database_local()
         else:
@@ -253,14 +239,27 @@ def main():
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Resetting the database: {args.reset}")
 
+    # TODO(sreejith): make the storage object from outside and pass that instead. 
+    # Currently only CHROMA backend is supported so hardcoding is fine. 
+    storage_obj = storage_factory.get_storage(
+            storage_type=storage_factory.StorageEnum.CHROMADB,
+            dataset_type=dataset,
+            collection_dir=output_dir,
+        )
+    if args.reset:
+        logger.warning("Resetting the database..")
+        storage_obj.reset(True)
+    
+    
+
     vdb = BioclipVectorDatabase(
         dataset_type=dataset,
-        collection_dir=output_dir,
+        storage=storage_obj,
         split=split,
         local_dataset=local_dataset,
         batch_size=args.batch_size,
     )
-    vdb.load_database(reset=args.reset)
+    vdb.load_database()
 
 
 if __name__ == "__main__":
