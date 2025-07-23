@@ -1,7 +1,7 @@
 import chromadb
 import logging
 
-from storage.storage_interface import StorageInterface
+from .storage_interface import StorageInterface
 from typing import List, Dict
 
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
@@ -12,10 +12,10 @@ logger = logging.getLogger()
 class Chroma(StorageInterface):
     def init(self, name: str, **kwargs):
         if "metadata" not in kwargs:
-            raise "Chromadb cannot be initialized without metadata."
+            raise ValueError("Chromadb cannot be initialized without metadata.")
 
         if "collection_dir" not in kwargs:
-            raise "Chromadb cannot be initialized without collection_dir."
+            raise ValueError("Chromadb cannot be initialized without collection_dir.")
 
         self._metadata = kwargs["metadata"]
         self._collection_dir = kwargs["collection_dir"]
@@ -50,7 +50,7 @@ class Chroma(StorageInterface):
 
     def reset(self, force=False):
         if force:
-            self._chroma_client.delete_collection(self._collection_name)
+            self._chroma_client.delete_collection(self._collection.name)
 
         return self.init(
             name=self._collection.name,

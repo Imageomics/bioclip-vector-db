@@ -1,13 +1,13 @@
 """
-Author: Sreejith Menon=
+Author: Sreejith Menon
 
 Contains factory methods that abstracts the internal implementation details of various storage implementations.
 """
 
 import enum
 
-from storage.storage_interface import StorageInterface
-import storage.storage_impl as storage_impl
+from .storage_interface import StorageInterface
+from . import storage_impl
 
 class HfDatasetType(enum.Enum):
     BIRD = "Somnath01/Birds_Species"
@@ -23,7 +23,7 @@ def get_storage(storage_type: StorageEnum, dataset_type: HfDatasetType, **kwargs
     """
     if storage_type == StorageEnum.CHROMADB:
         if "collection_dir" not in kwargs:
-            raise "Chromadb cannot be initialized without collection_dir."
+            raise ValueError("Chromadb cannot be initialized without collection_dir.")
         chroma = storage_impl.Chroma()
         return chroma.init(dataset_type.name, 
                            collection_dir=kwargs["collection_dir"],

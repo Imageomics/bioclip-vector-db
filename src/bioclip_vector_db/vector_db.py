@@ -5,22 +5,20 @@ Executable script for setting up a database of vectors from the bioclip dataset
 
 import argparse
 import PIL.Image
-import chromadb
 import datasets
-import enum
 import logging
 import os
 import torch
 import webdataset as wds
 import PIL
 import numpy as np
-import storage.storage_factory as storage_factory
 
 from bioclip.predict import TreeOfLifeClassifier
 from tqdm import tqdm
 from typing import List
-import parse_utils
-from storage.storage_interface import StorageInterface
+from . import parse_utils
+from .storage import storage_factory
+from .storage.storage_interface import StorageInterface
 
 _DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), "vector_db")
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
@@ -135,7 +133,7 @@ class BioclipVectorDatabase:
                 logger.warning(f"Skipping record with index: {i}")
                 continue
 
-            self._storage.add_embedding(embeddings=[embedding], ids=[id])
+            self._storage.add_embedding(id=id, embedding=embedding, metadata={})
             num_records += 1
 
         logger.info(f"Database loaded with {num_records} records.")
@@ -239,18 +237,15 @@ def main():
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Resetting the database: {args.reset}")
 
-    # TODO(sreejith): make the storage object from outside and pass that instead. 
-    # Currently only CHROMA backend is supported so hardcoding is fine. 
+    # Currently only CHROMA backend is supported so hardcoding is fine.
     storage_obj = storage_factory.get_storage(
-            storage_type=storage_factory.StorageEnum.CHROMADB,
-            dataset_type=dataset,
-            collection_dir=output_dir,
-        )
+        storage_type=storage_factory.StorageEnum.CHROMADB,
+        dataset_type=dataset,
+        collection_dir=output_dir,
+    )
     if args.reset:
         logger.warning("Resetting the database..")
         storage_obj.reset(True)
-    
-    
 
     vdb = BioclipVectorDatabase(
         dataset_type=dataset,
