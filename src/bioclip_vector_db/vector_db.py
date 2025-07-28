@@ -68,6 +68,7 @@ class BioclipVectorDatabase:
             logger.info(f"Loading dataset from local disk: {local_dataset}")
 
             # iterating through the dataset will fetch {batch_size} records at once.
+            # todo: sreejith - shuffle the dataset to support train indexes when appropriate.
             self._dataset = wds.DataPipeline(
                 wds.SimpleShardList(local_dataset),
                 wds.tarfile_to_samples(),
