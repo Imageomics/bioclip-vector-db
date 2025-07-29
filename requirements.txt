@@ -1,9 +1,8 @@
 numpy==1.*
 torch
 datasets
-torch
 pybioclip
 chromadb
 tqdm
 webdataset
-faiss-gpu
+# faiss-gpu

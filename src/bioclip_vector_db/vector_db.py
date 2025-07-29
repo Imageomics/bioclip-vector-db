@@ -240,7 +240,7 @@ def main():
 
     # Currently only CHROMA backend is supported so hardcoding is fine.
     storage_obj = storage_factory.get_storage(
-        storage_type=storage_factory.StorageEnum.CHROMADB,
+        storage_type=storage_factory.StorageEnum.FAISS_IVF,
         dataset_type=dataset,
         collection_dir=output_dir,
     )
