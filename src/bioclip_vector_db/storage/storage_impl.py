@@ -63,7 +63,8 @@ class Chroma(StorageInterface):
 
 class FaissIvf(StorageInterface):
     """Faiss index with inverted file index. Requires training to use."""
-
+    # TODO: Write index in shards. 
+    
     def init(self, name: str, **kwargs):
         if "collection_dir" not in kwargs:
             raise ValueError("Faiss cannot be initialized without collection_dir.")
