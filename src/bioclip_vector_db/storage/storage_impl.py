@@ -74,7 +74,7 @@ class FaissIvf(StorageInterface):
         else:
             self._nlist = kwargs["nlist"]
 
-        self._train_set_size = 1000 # * self._nlist
+        self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
         self._dimensions = kwargs["dimensions"]
