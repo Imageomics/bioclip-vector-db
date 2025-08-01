@@ -97,7 +97,7 @@ class FaissIvf(StorageInterface):
         return self
     
     def _add_embedding_to_index(self, id: str, embedding: List[float], metadata: Dict[str, str]):
-        self._index.add(embedding)
+        self._index.add(np.array(embedding))
         self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata} 
 
     def add_embedding(self, id: str, embedding: List[float], metadata: Dict[str, str]):
