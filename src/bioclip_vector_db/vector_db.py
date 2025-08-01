@@ -68,6 +68,7 @@ class BioclipVectorDatabase:
             logger.info(f"Loading dataset from local disk: {local_dataset}")
 
             # iterating through the dataset will fetch {batch_size} records at once.
+            # todo: sreejith - shuffle the dataset to support train indexes when appropriate.
             self._dataset = wds.DataPipeline(
                 wds.SimpleShardList(local_dataset),
                 wds.tarfile_to_samples(),
@@ -181,6 +182,7 @@ class BioclipVectorDatabase:
             self._load_database_local()
         else:
             self._load_database_web()
+        self._storage.flush()
 
 
 def main():
@@ -239,7 +241,7 @@ def main():
 
     # Currently only CHROMA backend is supported so hardcoding is fine.
     storage_obj = storage_factory.get_storage(
-        storage_type=storage_factory.StorageEnum.CHROMADB,
+        storage_type=storage_factory.StorageEnum.FAISS_IVF,
         dataset_type=dataset,
         collection_dir=output_dir,
     )

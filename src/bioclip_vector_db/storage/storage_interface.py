@@ -84,3 +84,12 @@ class StorageInterface(ABC):
         Resets the database to its initial state.
         """
         pass
+
+    def flush(self):
+        """
+        Performs the flush operation, if required.
+
+        Returns True if the flush operation was successful, False otherwise.
+        """
+        pass
+

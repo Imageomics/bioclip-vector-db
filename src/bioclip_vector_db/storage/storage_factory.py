@@ -16,6 +16,8 @@ class HfDatasetType(enum.Enum):
 
 class StorageEnum(enum.Enum):
     CHROMADB = 1
+    FAISS_IVF = 2
+
 
 def get_storage(storage_type: StorageEnum, dataset_type: HfDatasetType, **kwargs) -> StorageInterface:
     """
@@ -28,5 +30,14 @@ def get_storage(storage_type: StorageEnum, dataset_type: HfDatasetType, **kwargs
         return chroma.init(dataset_type.name, 
                            collection_dir=kwargs["collection_dir"],
                            metadata={"hnsw:space": "ip", "hnsw:search_ef": 10})
+    
+    if storage_type == StorageEnum.FAISS_IVF:
+        if "collection_dir" not in kwargs:
+            raise ValueError("Faiss cannot be initialized without collection_dir.")
+        faiss_ivf = storage_impl.FaissIvf()
+        return faiss_ivf.init(dataset_type.name, 
+                              collection_dir=kwargs["collection_dir"],
+                              dimensions=512,
+                              nlist=10)
 
     raise ValueError(f"Invalid storage type: {storage_type}")
