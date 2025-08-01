@@ -142,3 +142,6 @@ class FaissIvf(StorageInterface):
         # once trained, add all the training data back into the db.
         for id, embedding, metadata in zip(self._train_ids, self._train_embeddings, self._train_metadatas):
             self._add_embedding_to_index(id, embedding, metadata)
+
+    def flush(self):
+        faiss.write_index(self._index, f"{self._collection_dir}/faiss.index")

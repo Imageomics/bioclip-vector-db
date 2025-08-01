@@ -182,6 +182,7 @@ class BioclipVectorDatabase:
             self._load_database_local()
         else:
             self._load_database_web()
+        self._storage.flush()
 
 
 def main():
