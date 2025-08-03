@@ -73,14 +73,14 @@ class IndexPartitionWriter:
     def _maybe_write_to_temp(self):
         for partition_id in self._partition_to_embedding_map.keys():
             if (len(self._partition_to_embedding_map[partition_id]) > self._batch_size):
-                logger.info(f"Flusing partition {partition_id} to temp file temp_{partition_id}.npy.")
+                logger.info(f"Flushing partition {partition_id} to temp file temp_{partition_id}.npy.")
                 with open(os.path.join(self._collection_dir, f"temp_{partition_id}.npy"), "wb") as f:
                     np.save(f, self._partition_to_embedding_map[partition_id])
                 self._partition_to_embedding_map[partition_id].clear()
 
     def add_embedding(self, embedding):
-        _, partition_id = self._centroid_index.search([embedding], 1)
-        self._partition_to_embedding_map[partition_id].append(embedding)
+        _, partition_ids = self._centroid_index.search(np.array([embedding], dtype=np.float32), 1)
+        self._partition_to_embedding_map[partition_ids[0][0]].append(embedding)
 
         self._maybe_write_to_temp()
 
