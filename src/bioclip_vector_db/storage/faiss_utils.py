@@ -79,7 +79,9 @@ class IndexPartitionWriter:
     def _add_to_index_partitions(self):
         """TODO: Read back the temp numpy files and add them to the right partitions."""
         for partition_id in list(self._partition_to_embedding_map.keys()):
-            logger.info(f"Preparing to create the local index for partition: {partition_id}")
+            logger.info(
+                f"Preparing to create the local index for partition: {partition_id}"
+            )
             temp_file = IndexPartitionWriter._make_temp_numpy_file(
                 self._collection_dir, partition_id
             )
@@ -88,9 +90,12 @@ class IndexPartitionWriter:
             local_idx = faiss.IndexFlatIP(embeddings.shape[1])
             local_idx.add(embeddings)
             faiss.write_index(
-                local_idx, f"{self._collection_dir}/{self._local_index_file.format(idx=partition_id)}"
+                local_idx,
+                f"{self._collection_dir}/{self._local_index_file.format(idx=partition_id)}",
             )
-            logger.info(f"Write complete for index file: {self._local_index_file.format(idx=partition_id)}")
+            logger.info(
+                f"Write complete for index file: {self._local_index_file.format(idx=partition_id)}"
+            )
 
     def close(self):
         """Finalizer that flushes the temp buffers and creates local indexes."""

@@ -88,15 +88,11 @@ class FaissIvf(StorageInterface):
         logger.info(
             f"Initializing Faiss client with the factory string: {self._factory_string}."
         )
-        self._centroid_index = "leader.index"
-        self._local_index = "local_{idx}.index"
 
         self._writer = IndexPartitionWriter(
-            self._index, 
-            1000, # batch_size
-            self._collection_dir
+            self._index, 1000, self._collection_dir  # batch_size
         )
-        
+
         logger.info(f"Number of clusters: {self._nlist}")
         logger.info(f"Training set size: {self._train_set_size}")
 
@@ -166,4 +162,3 @@ class FaissIvf(StorageInterface):
 
     def flush(self):
         self._writer.close()
-        faiss.write_index(self._index, f"{self._collection_dir}/{self._centroid_index}")
