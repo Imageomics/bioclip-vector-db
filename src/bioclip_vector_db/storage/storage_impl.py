@@ -85,7 +85,7 @@ class IndexPartitionWriter:
                 self._partition_to_embedding_map[partition_id].clear()
 
     def add_embedding(self, embedding):
-        _, partition_ids = self._centroid_index.search(
+        _, partition_ids = self._centroid_index.quantizer.search(
             np.array([embedding], dtype=np.float32).reshape(1, -1), 1
         )
 
@@ -95,7 +95,7 @@ class IndexPartitionWriter:
         self._maybe_write_to_temp()
 
     def bulk_add_embedding(self, embeddings):
-        _, partition_ids = self._centroid_index.search(embeddings, 1)
+        _, partition_ids = self._centroid_index.quantizer.search(embeddings, 1)
         for embedding, partition_id in zip(embeddings, partition_ids):
             self._partition_to_embedding_map[partition_id].append(embedding)
 
