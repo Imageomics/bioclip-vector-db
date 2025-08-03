@@ -73,18 +73,19 @@ class IndexPartitionWriter:
     def _maybe_write_to_temp(self):
         for partition_id in self._partition_to_embedding_map.keys():
             if (len(self._partition_to_embedding_map[partition_id]) > self._batch_size):
+                logger.info(f"Flusing partition {partition_id} to temp file temp_{partition_id}.npy.")
                 with open(os.path.join(self._collection_dir, f"temp_{partition_id}.npy"), "wb") as f:
                     np.save(f, self._partition_to_embedding_map[partition_id])
                 self._partition_to_embedding_map[partition_id].clear()
 
-    def _add_embedding(self, embedding):
+    def add_embedding(self, embedding):
         _, partition_id = self._centroid_index.search([embedding], 1)
         self._partition_to_embedding_map[partition_id].append(embedding)
 
         self._maybe_write_to_temp()
 
 
-    def _bulk_add_embedding(self, embeddings):
+    def bulk_add_embedding(self, embeddings):
         _, partition_ids = self._centroid_index.search(embeddings, 1)
         for embedding, partition_id in zip(embeddings, partition_ids):
             self._partition_to_embedding_map[partition_id].append(embedding)
@@ -115,8 +116,9 @@ class FaissIvf(StorageInterface):
         self._index = faiss.index_factory(self._dimensions, self._factory_string)
         self._centroid_index = "leader.index"
         self._local_index = "local_{idx}.index"
-        self._local_index_map = {}
-        self._make_temp_local_index_map()
+
+        self._writer = IndexPartitionWriter(self._index, self._train_set_size, self._collection_dir)
+
 
         # stores the mapping between partition number to a list of embeddings.
         self._partition_embedding_map = {}
@@ -141,6 +143,7 @@ class FaissIvf(StorageInterface):
     def _add_embedding_to_index(self, id: str, embedding: List[float], metadata: Dict[str, str]):        
         self._index.add(np.array([embedding]).astype("float32"))
         self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata} 
+        self._writer.add_embedding(embedding)
 
     def add_embedding(self, id: str, embedding: List[float], metadata: Dict[str, str]):
         if len(self._train_ids) < self._train_set_size:
