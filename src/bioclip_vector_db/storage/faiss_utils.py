@@ -33,10 +33,16 @@ class IndexPartitionWriter:
         # Ensure the output directory exists
         os.makedirs(self._collection_dir, exist_ok=True)
 
+    @staticmethod
+    def _make_temp_numpy_file(collection_dir: str, partition_id: int):
+        return os.path.join(collection_dir, f"partition_{partition_id}.npy")
+
     def _write_partition_to_file(self, partition_id: int):
         """Helper method to write a partition's buffer to disk."""
         embeddings_to_write = np.vstack(self._partition_to_embedding_map[partition_id])
-        file_path = os.path.join(self._collection_dir, f"partition_{partition_id}.npy")
+        file_path = IndexPartitionWriter._make_temp_numpy_file(
+            self._collection_dir, partition_id
+        )
 
         with open(file_path, "wb") as f:
             np.save(f, embeddings_to_write)
@@ -73,23 +79,27 @@ class IndexPartitionWriter:
             if self._partition_to_embedding_map[partition_id]:
                 self._write_partition_to_file(partition_id)
 
-    def _initialize_index_partitions(self):
-        """ TODO: initializes all local index partitions. """
-        pass
-
     def _add_to_index_partitions(self):
-        """ TODO: Read back the temp numpy files and add them to the right partitions."""
-        pass 
-
-    def _write_all_partitions(self):
-        """ Write all local indexes to disk. """
-        pass 
+        """TODO: Read back the temp numpy files and add them to the right partitions."""
+        for partition_id in list(self._partition_to_embedding_map.keys()):
+            logger.info(f"Preparing to create the local index for partition: {partition_id}")
+            temp_file = IndexPartitionWriter._make_temp_numpy_file(
+                self._collection_dir, partition_id
+            )
+            with open(temp_file, "rb") as f:
+                embeddings = np.load(f)
+            local_idx = faiss.IndexFlatIP(embeddings.shape[1])
+            local_idx.add(embeddings)
+            faiss.write_index(
+                local_idx, f"{self._collection_dir}/{self._local_index_file.format(idx=partition_id)}"
+            )
+            logger.info(f"Write complete for index file: {self._local_index_file.format(idx=partition_id)}")
 
     def close(self):
-        """ Finalizer that flushes the temp buffers and creates local indexes. """
+        """Finalizer that flushes the temp buffers and creates local indexes."""
         self.flush()
-        self._initialize_index_partitions()
         self._add_to_index_partitions()
-        self._write_all_partitions()
 
-        faiss.write_index(self._index, f"{self._collection_dir}/{self._centroid_index_file}")
+        faiss.write_index(
+            self._index, f"{self._collection_dir}/{self._centroid_index_file}"
+        )
