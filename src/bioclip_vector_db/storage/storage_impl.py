@@ -85,15 +85,18 @@ class FaissIvf(StorageInterface):
         self._factory_string = f"IVF{self._nlist},SQfp16"
 
         self._index = faiss.index_factory(self._dimensions, self._factory_string)
+        logger.info(
+            f"Initializing Faiss client with the factory string: {self._factory_string}."
+        )
         self._centroid_index = "leader.index"
         self._local_index = "local_{idx}.index"
 
         self._writer = IndexPartitionWriter(
-            self._index, self._train_set_size, self._collection_dir
+            self._index, 
+            1000, # batch_size
+            self._collection_dir
         )
-        logger.info(
-            f"Initializing Faiss client with the factory string: {self._factory_string}."
-        )
+        
         logger.info(f"Number of clusters: {self._nlist}")
         logger.info(f"Training set size: {self._train_set_size}")
 

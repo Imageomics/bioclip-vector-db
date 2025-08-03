@@ -27,6 +27,9 @@ class IndexPartitionWriter:
         self._batch_size = batch_size
         self._collection_dir = collection_dir
 
+        self._centroid_index_file = "leader.index"
+        self._local_index_file = "local_{idx}.index"
+
         # Ensure the output directory exists
         os.makedirs(self._collection_dir, exist_ok=True)
 
@@ -70,6 +73,23 @@ class IndexPartitionWriter:
             if self._partition_to_embedding_map[partition_id]:
                 self._write_partition_to_file(partition_id)
 
+    def _initialize_index_partitions(self):
+        """ TODO: initializes all local index partitions. """
+        pass
+
+    def _add_to_index_partitions(self):
+        """ TODO: Read back the temp numpy files and add them to the right partitions."""
+        pass 
+
+    def _write_all_partitions(self):
+        """ Write all local indexes to disk. """
+        pass 
+
     def close(self):
         """ Finalizer that flushes the temp buffers and creates local indexes. """
         self.flush()
+        self._initialize_index_partitions()
+        self._add_to_index_partitions()
+        self._write_all_partitions()
+
+        faiss.write_index(self._index, f"{self._collection_dir}/{self._centroid_index_file}")
