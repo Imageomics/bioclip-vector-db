@@ -198,10 +198,10 @@ class FaissIvf(StorageInterface):
         logging.info("Training complete.")
 
         # once trained, add all the training data back into the db.
-        for id, embedding, metadata in zip(
-            self._train_ids, self._train_embeddings, self._train_metadatas
-        ):
-            self._index.add(np.array([embedding]).astype("float32"))
+        # for id, embedding, metadata in zip(
+        #     self._train_ids, self._train_embeddings, self._train_metadatas
+        # ):
+            # self._index.add(np.array([embedding]).astype("float32"))
             # self._add_embedding_to_index(id, embedding, metadata)
 
     def _local_flush(self):
