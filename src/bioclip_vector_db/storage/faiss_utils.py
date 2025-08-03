@@ -88,7 +88,6 @@ class IndexPartitionWriter:
                 self._write_partition_to_file(partition_id)
 
     def _add_to_index_partitions(self):
-        """TODO: Read back the temp numpy files and add them to the right partitions."""
         for partition_id in list(self._partition_to_embedding_map.keys()):
             logger.info(
                 f"Preparing to create the local index for partition: {partition_id}"
@@ -117,5 +116,5 @@ class IndexPartitionWriter:
         self._add_to_index_partitions()
 
         faiss.write_index(
-            self._index, f"{self._collection_dir}/{self._centroid_index_file}"
+            self._centroid_index, f"{self._collection_dir}/{self._centroid_index_file}"
         )
