@@ -81,7 +81,7 @@ class IndexPartitionWriter:
                     os.path.join(self._collection_dir, f"temp_{partition_id}.npy"), "wb"
                 ) as f:
                     np.save(f, self._partition_to_embedding_map[partition_id])
-                    
+
                 self._partition_to_embedding_map[partition_id].clear()
 
     def add_embedding(self, embedding):
@@ -102,8 +102,6 @@ class IndexPartitionWriter:
 
 class FaissIvf(StorageInterface):
     """Faiss index with inverted file index. Requires training to use."""
-
-    # TODO: Write index in shards.
 
     def init(self, name: str, **kwargs):
         if "collection_dir" not in kwargs:
@@ -155,7 +153,7 @@ class FaissIvf(StorageInterface):
         self, id: str, embedding: List[float], metadata: Dict[str, str]
     ):
         embedding_np = np.array([embedding]).astype("float32")
-        self._index.add(embedding_np)
+        # self._index.add(embedding_np)
         self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata}
         self._writer.add_embedding(embedding_np)
 
@@ -201,6 +199,7 @@ class FaissIvf(StorageInterface):
         for id, embedding, metadata in zip(
             self._train_ids, self._train_embeddings, self._train_metadatas
         ):
+            self._index.add(np.array([embedding]).astype("float32"))
             self._add_embedding_to_index(id, embedding, metadata)
 
     def _local_flush(self):
