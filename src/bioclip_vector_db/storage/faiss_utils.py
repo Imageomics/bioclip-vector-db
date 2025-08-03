@@ -41,10 +41,17 @@ class IndexPartitionWriter:
             self._collection_dir, partition_id
         )
 
+        # If the file already exists, load its content and append the new embeddings.
+        # Writing in append mode won't work since np.save adds additional headers.
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            with open(file_path, "rb") as f:
+                existing_embeddings = np.load(f)
+            embeddings_to_write = np.vstack([existing_embeddings, embeddings_to_write])
+
         with open(file_path, "wb") as f:
             np.save(f, embeddings_to_write)
 
-        logger.info(f"Flushed {len(embeddings_to_write)} embeddings to {file_path}.")
+        logger.info(f"Flushed {len(self._partition_to_embedding_map[partition_id])} embeddings to {file_path}. Total in file: {len(embeddings_to_write)}.")
 
         # Clear the buffer.
         self._partition_to_embedding_map[partition_id].clear()
