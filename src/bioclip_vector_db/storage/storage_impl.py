@@ -88,6 +88,8 @@ class IndexPartitionWriter:
         _, partition_ids = self._centroid_index.search(
             np.array([embedding], dtype=np.float32).reshape(1, -1), 1
         )
+
+        logging.info(f"adding to partition : {partition_ids[0][0]}")
         self._partition_to_embedding_map[partition_ids[0][0]].append(embedding)
 
         self._maybe_write_to_temp()
@@ -200,7 +202,7 @@ class FaissIvf(StorageInterface):
             self._train_ids, self._train_embeddings, self._train_metadatas
         ):
             self._index.add(np.array([embedding]).astype("float32"))
-            self._add_embedding_to_index(id, embedding, metadata)
+            # self._add_embedding_to_index(id, embedding, metadata)
 
     def _local_flush(self):
 
