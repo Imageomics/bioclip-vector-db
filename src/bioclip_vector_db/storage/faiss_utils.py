@@ -17,7 +17,8 @@ class IndexPartitionWriter:
     """
 
     def __init__(
-        self, centroid_index: faiss.Index, batch_size: int, collection_dir: str
+        self, centroid_index: faiss.Index, batch_size: int, collection_dir: str,
+        cleanup_temp_files=False
     ):
         self._centroid_index = centroid_index
         self._partition_to_embedding_map = defaultdict(list)
@@ -26,6 +27,7 @@ class IndexPartitionWriter:
 
         self._centroid_index_file = "leader.index"
         self._local_index_file = "local_{idx}.index"
+        self._cleanup_temp_files = cleanup_temp_files
 
         # Ensure the output directory exists
         os.makedirs(self._collection_dir, exist_ok=True)
@@ -51,7 +53,9 @@ class IndexPartitionWriter:
         with open(file_path, "wb") as f:
             np.save(f, embeddings_to_write)
 
-        logger.info(f"Flushed {len(self._partition_to_embedding_map[partition_id])} embeddings to {file_path}. Total in file: {len(embeddings_to_write)}.")
+        logger.info(
+            f"Flushed {len(self._partition_to_embedding_map[partition_id])} embeddings to {file_path}. Total in file: {len(embeddings_to_write)}."
+        )
 
         # Clear the buffer.
         self._partition_to_embedding_map[partition_id].clear()
@@ -75,7 +79,7 @@ class IndexPartitionWriter:
         self._partition_to_embedding_map[partition_id].append(embedding)
         self._maybe_flush_buffers()
 
-    def flush(self):
+    def _flush(self):
         """Writes all remaining embeddings from all buffers to disk."""
         logger.info("Final flush: writing all remaining data to disk.")
         for partition_id in list(self._partition_to_embedding_map.keys()):
@@ -104,9 +108,12 @@ class IndexPartitionWriter:
                 f"Write complete for index file: {self._local_index_file.format(idx=partition_id)}"
             )
 
+            if self._cleanup_temp_files:
+                os.remove(temp_file)
+
     def close(self):
         """Finalizer that flushes the temp buffers and creates local indexes."""
-        self.flush()
+        self._flush()
         self._add_to_index_partitions()
 
         faiss.write_index(
