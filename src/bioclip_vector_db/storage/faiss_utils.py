@@ -19,9 +19,6 @@ class IndexPartitionWriter:
     def __init__(
         self, centroid_index: faiss.Index, batch_size: int, collection_dir: str
     ):
-        if not centroid_index.is_trained:
-            raise ValueError("The centroid_index (quantizer) must be trained.")
-
         self._centroid_index = centroid_index
         self._partition_to_embedding_map = defaultdict(list)
         self._batch_size = batch_size
