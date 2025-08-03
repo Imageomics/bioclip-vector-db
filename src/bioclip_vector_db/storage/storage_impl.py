@@ -162,5 +162,5 @@ class FaissIvf(StorageInterface):
             self._add_embedding_to_index(id, embedding, metadata)
 
     def flush(self):
-        self._writer.flush()
+        self._writer.close()
         faiss.write_index(self._index, f"{self._collection_dir}/{self._centroid_index}")

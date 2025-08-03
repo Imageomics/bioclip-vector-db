@@ -69,3 +69,7 @@ class IndexPartitionWriter:
             # Check if there's anything left to write
             if self._partition_to_embedding_map[partition_id]:
                 self._write_partition_to_file(partition_id)
+
+    def close(self):
+        """ Finalizer that flushes the temp buffers and creates local indexes. """
+        self.flush()
