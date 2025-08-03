@@ -5,6 +5,7 @@ import numpy as np
 import os
 
 from .storage_interface import StorageInterface
+from .faiss_utils import IndexPartitionWriter
 from typing import List, Dict
 from collections import defaultdict
 
@@ -64,44 +65,6 @@ class Chroma(StorageInterface):
         )
 
 
-class IndexPartitionWriter:
-    def __init__(self, centroid_index, batch_size, collection_dir):
-        self._centroid_index = centroid_index
-        self._partition_to_embedding_map = defaultdict(list)
-        self._batch_size = batch_size
-        self._collection_dir = collection_dir
-
-    def _maybe_write_to_temp(self):
-        for partition_id in self._partition_to_embedding_map.keys():
-            if len(self._partition_to_embedding_map[partition_id]) > self._batch_size:
-                logger.info(
-                    f"Flushing partition {partition_id} to temp file temp_{partition_id}.npy."
-                )
-                with open(
-                    os.path.join(self._collection_dir, f"temp_{partition_id}.npy"), "wb"
-                ) as f:
-                    np.save(f, self._partition_to_embedding_map[partition_id])
-
-                self._partition_to_embedding_map[partition_id].clear()
-
-    def add_embedding(self, embedding):
-        _, partition_ids = self._centroid_index.quantizer.search(
-            np.array([embedding], dtype=np.float32).reshape(1, -1), 1
-        )
-
-        logging.info(f"adding to partition : {partition_ids[0][0]}")
-        self._partition_to_embedding_map[partition_ids[0][0]].append(embedding)
-
-        self._maybe_write_to_temp()
-
-    def bulk_add_embedding(self, embeddings):
-        _, partition_ids = self._centroid_index.quantizer.search(embeddings, 1)
-        for embedding, partition_id in zip(embeddings, partition_ids):
-            self._partition_to_embedding_map[partition_id].append(embedding)
-
-        self._maybe_write_to_temp()
-
-
 class FaissIvf(StorageInterface):
     """Faiss index with inverted file index. Requires training to use."""
 
@@ -128,10 +91,6 @@ class FaissIvf(StorageInterface):
         self._writer = IndexPartitionWriter(
             self._index, self._train_set_size, self._collection_dir
         )
-
-        # stores the mapping between partition number to a list of embeddings.
-        self._partition_embedding_map = {}
-
         logger.info(
             f"Initializing Faiss client with the factory string: {self._factory_string}."
         )
@@ -155,7 +114,6 @@ class FaissIvf(StorageInterface):
         self, id: str, embedding: List[float], metadata: Dict[str, str]
     ):
         embedding_np = np.array([embedding]).astype("float32")
-        # self._index.add(embedding_np)
         self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata}
         self._writer.add_embedding(embedding_np)
 
@@ -198,15 +156,11 @@ class FaissIvf(StorageInterface):
         logging.info("Training complete.")
 
         # once trained, add all the training data back into the db.
-        # for id, embedding, metadata in zip(
-        #     self._train_ids, self._train_embeddings, self._train_metadatas
-        # ):
-            # self._index.add(np.array([embedding]).astype("float32"))
-            # self._add_embedding_to_index(id, embedding, metadata)
-
-    def _local_flush(self):
-
-        pass
+        for id, embedding, metadata in zip(
+            self._train_ids, self._train_embeddings, self._train_metadatas
+        ):
+            self._add_embedding_to_index(id, embedding, metadata)
 
     def flush(self):
+        self._writer.flush()
         faiss.write_index(self._index, f"{self._collection_dir}/{self._centroid_index}")
