@@ -115,6 +115,7 @@ class IndexPartitionWriter:
         self._flush()
         self._add_to_index_partitions()
 
+        # creates the centroid index once all the partitions are written.
         faiss.write_index(
             self._centroid_index, f"{self._collection_dir}/{self._centroid_index_file}"
         )

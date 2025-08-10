@@ -37,7 +37,6 @@ def get_storage(storage_type: StorageEnum, dataset_type: HfDatasetType, **kwargs
         faiss_ivf = storage_impl.FaissIvf()
         return faiss_ivf.init(dataset_type.name, 
                               collection_dir=kwargs["collection_dir"],
-                              dimensions=512,
-                              nlist=10)
+                              dimensions=512)
 
     raise ValueError(f"Invalid storage type: {storage_type}")
