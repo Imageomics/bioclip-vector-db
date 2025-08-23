@@ -228,6 +228,14 @@ def main():
         help="Specifies the batch size which determine the number of datapoints which will be read at once from the dataset.",
     )
 
+    parser.add_argument(
+        "--storage",
+        type=lambda s: storage_factory.StorageEnum[s.upper()],
+        choices=list(storage_factory.StorageEnum),
+        required=True,
+        help="Storage to be used for creating the vector database.",
+    )
+
     args = parser.parse_args()
     dataset = args.dataset
     output_dir = args.output_dir
@@ -238,10 +246,11 @@ def main():
     logger.info(f"Creating database for dataset: {dataset.value}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Resetting the database: {args.reset}")
+    logger.info(f"Using storage: {args.storage}")
 
     # Currently only CHROMA backend is supported so hardcoding is fine.
     storage_obj = storage_factory.get_storage(
-        storage_type=storage_factory.StorageEnum.FAISS_IVF,
+        storage_type=args.storage,
         dataset_type=dataset,
         collection_dir=output_dir,
     )
