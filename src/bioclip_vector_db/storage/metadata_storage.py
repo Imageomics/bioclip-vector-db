@@ -16,7 +16,7 @@ class MetadataDatabase:
     ID is also stored to uniquely identify the location of the vector.
     """
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, reset: bool = False):
         """
         Initializes the MetadataDatabase.
 
@@ -25,6 +25,8 @@ class MetadataDatabase:
         """
         self.db_path = os.path.join(db_path, "metadata.db")
         self.local = threading.local()
+        if reset:
+            self._reset()
         self.create_table()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -124,3 +126,14 @@ class MetadataDatabase:
         if hasattr(self.local, "connection"):
             self.local.connection.close()
             del self.local.connection
+
+    def _reset(self):
+        """Deletes the metadata table."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute("DROP TABLE IF EXISTS metadata")
+                logger.info("SQLITE: Reset table successful.")
+        except sqlite3.Error as e:
+            logger.error(f"Error resetting table: {e}")
+            raise
