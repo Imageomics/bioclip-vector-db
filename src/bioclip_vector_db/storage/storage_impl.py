@@ -111,8 +111,7 @@ class FaissIvf(StorageInterface):
         self, id: str, embedding: List[float], metadata: Dict[str, str]
     ):
         embedding_np = np.array([embedding]).astype("float32")
-        self._metadata_store.add_mapping(self._index.ntotal, id, metadata)
-        self._writer.add_embedding(embedding_np)
+        self._writer.add_embedding(embedding_np, original_id=id)
 
     def add_embedding(self, id: str, embedding: List[float], metadata: Dict[str, str]):
         if len(self._train_ids) < self._train_set_size:

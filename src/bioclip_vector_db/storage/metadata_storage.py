@@ -8,7 +8,13 @@ import os
 logger = logging.getLogger(__name__)
 
 class MetadataDatabase:
-    """A thread-safe SQLite-based metadata store for FAISS."""
+    """
+    A thread-safe SQLite-based metadata store for FAISS.
+
+    This database stores the mapping between a FAISS vector ID and its original
+    Image ID. Since the vectors may be partitioned into multiple indexes, the partition
+    ID is also stored to uniquely identify the location of the vector.
+    """
 
     def __init__(self, db_path: str):
         """
@@ -34,10 +40,12 @@ class MetadataDatabase:
             with conn:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS metadata (
-                        faiss_id INTEGER PRIMARY KEY,
+                        partition_id INTEGER NOT NULL,
+                        faiss_id INTEGER NOT NULL,
                         original_id TEXT NOT NULL,
                         metadata TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (partition_id, faiss_id)
                     )
                 """)
                 logger.info("SQLITE: Create table successful.")
@@ -45,12 +53,13 @@ class MetadataDatabase:
             logger.error(f"Error creating table: {e}")
             raise
 
-    def add_mapping(self, faiss_id: int, original_id: str, metadata: Optional[Dict[str, Any]] = None):
+    def add_mapping(self, partition_id: int, faiss_id: int, original_id: str, metadata: Optional[Dict[str, Any]] = None):
         """
-        Adds a mapping between a FAISS ID and an original ID.
+        Adds a mapping between a FAISS ID and an original ID for a given partition.
 
         Args:
-            faiss_id: The FAISS index ID.
+            partition_id: The ID of the partition file.
+            faiss_id: The FAISS index ID within the partition.
             original_id: The original ID of the document/function.
             metadata: Optional dictionary of metadata to store as a JSON string.
         """
@@ -59,21 +68,22 @@ class MetadataDatabase:
         try:
             with conn:
                 conn.execute(
-                    "INSERT INTO metadata (faiss_id, original_id, metadata) VALUES (?, ?, ?)",
-                    (faiss_id, original_id, metadata_json)
+                    "INSERT INTO metadata (partition_id, faiss_id, original_id, metadata) VALUES (?, ?, ?, ?)",
+                    (partition_id, faiss_id, original_id, metadata_json)
                 )
-                logger.info(f"Added mapping: faiss_id={faiss_id}, original_id={original_id}")
+                logger.warning(f"Added mapping: partition_id={partition_id}, faiss_id={faiss_id}, original_id={original_id}")
         except sqlite3.IntegrityError:
-            logger.warning(f"faiss_id {faiss_id} already exists. Ignoring.")
+            logger.warning(f"faiss_id {faiss_id} in partition {partition_id} already exists. Ignoring.")
         except sqlite3.Error as e:
             logger.error(f"Error adding mapping: {e}")
             raise
 
-    def get_original_id(self, faiss_id: int) -> Optional[str]:
+    def get_original_id(self, partition_id: int, faiss_id: int) -> Optional[str]:
         """
-        Retrieves the original ID for a given FAISS ID.
+        Retrieves the original ID for a given FAISS ID in a specific partition.
 
         Args:
+            partition_id: The ID of the partition file.
             faiss_id: The FAISS index ID.
 
         Returns:
@@ -82,7 +92,7 @@ class MetadataDatabase:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT original_id FROM metadata WHERE faiss_id = ?", (faiss_id,))
+            cursor.execute("SELECT original_id FROM metadata WHERE partition_id = ? AND faiss_id = ?", (partition_id, faiss_id,))
             result = cursor.fetchone()
             return result[0] if result else None
         except sqlite3.Error as e:
