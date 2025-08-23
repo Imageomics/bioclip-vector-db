@@ -4,6 +4,7 @@ import faiss
 import numpy as np
 
 from .storage_interface import StorageInterface
+from .metadata_storage import MetadataDatabase
 from .faiss_utils import IndexPartitionWriter
 from typing import List, Dict
 from collections import defaultdict
@@ -98,8 +99,7 @@ class FaissIvf(StorageInterface):
         self._train_embeddings = []
         self._train_metadatas = []
 
-        # todo: sreejith; has to be written to some other db store.
-        self._metadata_store = {}
+        self._metadata_store = MetadataDatabase(db_path=self._collection_dir)
         return self
 
     def _make_temp_local_index_map(self):
@@ -111,7 +111,7 @@ class FaissIvf(StorageInterface):
         self, id: str, embedding: List[float], metadata: Dict[str, str]
     ):
         embedding_np = np.array([embedding]).astype("float32")
-        self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata}
+        self._metadata_store.add_mapping(self._index.ntotal, id, metadata)
         self._writer.add_embedding(embedding_np)
 
     def add_embedding(self, id: str, embedding: List[float], metadata: Dict[str, str]):

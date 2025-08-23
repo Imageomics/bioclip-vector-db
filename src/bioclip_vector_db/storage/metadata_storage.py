@@ -3,6 +3,7 @@ import threading
 import json
 import logging
 from typing import Optional, Dict, Any
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ class MetadataDatabase:
         Args:
             db_path: The path to the SQLite database file.
         """
-        self.db_path = db_path
+        self.db_path = os.path.join(db_path, "metadata.db")
         self.local = threading.local()
         self.create_table()
 
@@ -39,7 +40,7 @@ class MetadataDatabase:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                logger.info("Create table successful.")
+                logger.info("SQLITE: Create table successful.")
         except sqlite3.Error as e:
             logger.error(f"Error creating table: {e}")
             raise
@@ -61,6 +62,7 @@ class MetadataDatabase:
                     "INSERT INTO metadata (faiss_id, original_id, metadata) VALUES (?, ?, ?)",
                     (faiss_id, original_id, metadata_json)
                 )
+                logger.info(f"Added mapping: faiss_id={faiss_id}, original_id={original_id}")
         except sqlite3.IntegrityError:
             logger.warning(f"faiss_id {faiss_id} already exists. Ignoring.")
         except sqlite3.Error as e:
