@@ -5,4 +5,5 @@ pybioclip
 chromadb
 tqdm
 webdataset
-# faiss-gpu
+faiss-gpu
+flask
