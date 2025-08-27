@@ -1,11 +1,8 @@
-<<<<<<< HEAD
 """
 Usage:
   python neighborhood_server.py --index_dir <path_to_index_dir> --index_file_prefix local_ --partitions 1,2,5-10 --nprobe 10
 """
 
-=======
->>>>>>> bbb5bef (add support to search across multiple vector databases)
 import numpy as np
 import faiss
 import json
@@ -22,18 +19,12 @@ logger = logging.getLogger()
 
 
 class FaissIndexService:
-<<<<<<< HEAD
     def __init__(
         self, index_path_pattern: str, neighborhood_ids: List[int], nprobe: int = 1
     ):
         self._index_path_pattern = index_path_pattern
         self._indices = {}
         self._nprobe = nprobe
-=======
-    def __init__(self, index_path_pattern: str, neighborhood_ids: List[int]):
-        self._index_path_pattern = index_path_pattern
-        self._indices = {}
->>>>>>> bbb5bef (add support to search across multiple vector databases)
 
         self._load(neighborhood_ids)
 
@@ -48,13 +39,9 @@ class FaissIndexService:
             for i in range(len(neighborhood_ids)):
                 file = self._index_path_pattern.format(neighborhood_ids[i])
                 logger.info(f"Loading index file: {file}")
-<<<<<<< HEAD
                 index = faiss.read_index(file)
                 index.nprobe = self._nprobe
                 self._indices[neighborhood_ids[i]] = index
-=======
-                self._indices[neighborhood_ids[i]] = faiss.read_index(file)
->>>>>>> bbb5bef (add support to search across multiple vector databases)
             self.dimensions()
         except Exception as e:
             logger.error(
@@ -62,7 +49,6 @@ class FaissIndexService:
             )
             sys.exit(1)
 
-<<<<<<< HEAD
     def _search(self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1):
         """Performs a search on the loaded FAISS local index."""
         query_np = np.array([query_vector]).astype("float32")
@@ -72,15 +58,6 @@ class FaissIndexService:
 
     def search(
         self, query_vector: list, top_n: int, nprobe: int = 1
-=======
-    def _search(self, query_vector: list, top_n: int, neighborhood_id: int):
-        """Performs a search on the loaded FAISS local index."""
-        query_np = np.array([query_vector]).astype("float32")
-        return self._indices[neighborhood_id].search(query_np, top_n)
-
-    def search(
-        self, query_vector: list, top_n: int
->>>>>>> bbb5bef (add support to search across multiple vector databases)
     ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
         """Performs a search on the loaded FAISS index."""
         assert all(
@@ -89,11 +66,7 @@ class FaissIndexService:
 
         results = {}
         for id in self._indices.keys():
-<<<<<<< HEAD
             distances, indices = self._search(query_vector, top_n, id, nprobe)
-=======
-            distances, indices = self._search(query_vector, top_n, id)
->>>>>>> bbb5bef (add support to search across multiple vector databases)
             results[id] = (distances, indices)
         return results
 
@@ -108,12 +81,9 @@ class FaissIndexService:
         assert len(set(all_dims)) == 1, "All indices must have the same dimension"
         return all_dims[0]
 
-<<<<<<< HEAD
     def get_nprobe(self) -> int:
         return self._nprobe
 
-=======
->>>>>>> bbb5bef (add support to search across multiple vector databases)
 
 class LocalIndexServer:
     """A Flask server class to handle search and health check requests."""
@@ -168,13 +138,10 @@ class LocalIndexServer:
 
         query_vector = data["query_vector"]
         top_n = data.get("top_n", 10)
-<<<<<<< HEAD
         nprobe = data.get("nprobe", self._service.get_nprobe())
 
         if "nprobe" in data:
             logger.info(f"Using nprobe override: {nprobe}")
-=======
->>>>>>> bbb5bef (add support to search across multiple vector databases)
 
         # Validate vector dimensions
         if len(query_vector) != self._service.dimensions():
