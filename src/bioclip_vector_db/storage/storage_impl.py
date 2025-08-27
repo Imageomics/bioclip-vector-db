@@ -99,7 +99,6 @@ class FaissIvf(StorageInterface):
         self._train_embeddings = []
         self._train_metadatas = []
 
-        self._metadata_store = MetadataDatabase(db_path=self._collection_dir)
         return self
 
     def _make_temp_local_index_map(self):
@@ -111,6 +110,8 @@ class FaissIvf(StorageInterface):
         self, id: str, embedding: List[float], metadata: Dict[str, str]
     ):
         embedding_np = np.array([embedding]).astype("float32")
+
+        # TODO(sreejith): pass the metadata as well and add it as a JSON in the table. 
         self._writer.add_embedding(embedding_np, original_id=id)
 
     def add_embedding(self, id: str, embedding: List[float], metadata: Dict[str, str]):
