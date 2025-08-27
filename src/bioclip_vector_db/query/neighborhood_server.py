@@ -49,13 +49,15 @@ class FaissIndexService:
             )
             sys.exit(1)
 
-    def _search(self, query_vector: list, top_n: int, neighborhood_id: int):
+    def _search(self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1):
         """Performs a search on the loaded FAISS local index."""
         query_np = np.array([query_vector]).astype("float32")
-        return self._indices[neighborhood_id].search(query_np, top_n)
+        index = self._indices[neighborhood_id]
+        index.nprobe = nprobe
+        return index.search(query_np, top_n)
 
     def search(
-        self, query_vector: list, top_n: int
+        self, query_vector: list, top_n: int, nprobe: int = 1
     ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
         """Performs a search on the loaded FAISS index."""
         assert all(
@@ -64,7 +66,7 @@ class FaissIndexService:
 
         results = {}
         for id in self._indices.keys():
-            distances, indices = self._search(query_vector, top_n, id)
+            distances, indices = self._search(query_vector, top_n, id, nprobe)
             results[id] = (distances, indices)
         return results
 
@@ -78,6 +80,9 @@ class FaissIndexService:
         all_dims = [idx.d for idx in self._indices.values()]
         assert len(set(all_dims)) == 1, "All indices must have the same dimension"
         return all_dims[0]
+
+    def get_nprobe(self) -> int:
+        return self._nprobe
 
 
 class LocalIndexServer:
@@ -133,6 +138,10 @@ class LocalIndexServer:
 
         query_vector = data["query_vector"]
         top_n = data.get("top_n", 10)
+        nprobe = data.get("nprobe", self._service.get_nprobe())
+
+        if "nprobe" in data:
+            logger.info(f"Using nprobe override: {nprobe}")
 
         # Validate vector dimensions
         if len(query_vector) != self._service.dimensions():
@@ -140,7 +149,7 @@ class LocalIndexServer:
             return self._error_response(msg, 400)
 
         try:
-            results = self._service.search(query_vector, top_n)
+            results = self._service.search(query_vector, top_n, nprobe)
 
             # Format the raw FAISS results into a more descriptive list of objects
             formatted_results = []
