@@ -1,8 +1,14 @@
+"""
+Usage:
+  python neighborhood_server.py --index_dir <path_to_index_dir> --index_file_prefix local_ --partitions 1,2,5-10 --nprobe 10
+"""
+
 import numpy as np
 import faiss
 import json
 import logging
 import sys
+import argparse
 
 from typing import List, Dict
 from flask import Flask, request, jsonify
@@ -13,9 +19,12 @@ logger = logging.getLogger()
 
 
 class FaissIndexService:
-    def __init__(self, index_path_pattern: str, neighborhood_ids: List[int]):
+    def __init__(
+        self, index_path_pattern: str, neighborhood_ids: List[int], nprobe: int = 1
+    ):
         self._index_path_pattern = index_path_pattern
         self._indices = {}
+        self._nprobe = nprobe
 
         self._load(neighborhood_ids)
 
@@ -30,7 +39,9 @@ class FaissIndexService:
             for i in range(len(neighborhood_ids)):
                 file = self._index_path_pattern.format(neighborhood_ids[i])
                 logger.info(f"Loading index file: {file}")
-                self._indices[neighborhood_ids[i]] = faiss.read_index(file)
+                index = faiss.read_index(file)
+                index.nprobe = self._nprobe
+                self._indices[neighborhood_ids[i]] = index
             self.dimensions()
         except Exception as e:
             logger.error(
@@ -38,13 +49,15 @@ class FaissIndexService:
             )
             sys.exit(1)
 
-    def _search(self, query_vector: list, top_n: int, neighborhood_id: int):
+    def _search(self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1):
         """Performs a search on the loaded FAISS local index."""
         query_np = np.array([query_vector]).astype("float32")
-        return self._indices[neighborhood_id].search(query_np, top_n)
+        index = self._indices[neighborhood_id]
+        index.nprobe = nprobe
+        return index.search(query_np, top_n)
 
     def search(
-        self, query_vector: list, top_n: int
+        self, query_vector: list, top_n: int, nprobe: int = 1
     ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
         """Performs a search on the loaded FAISS index."""
         assert all(
@@ -53,7 +66,7 @@ class FaissIndexService:
 
         results = {}
         for id in self._indices.keys():
-            distances, indices = self._search(query_vector, top_n, id)
+            distances, indices = self._search(query_vector, top_n, id, nprobe)
             results[id] = (distances, indices)
         return results
 
@@ -67,6 +80,9 @@ class FaissIndexService:
         all_dims = [idx.d for idx in self._indices.values()]
         assert len(set(all_dims)) == 1, "All indices must have the same dimension"
         return all_dims[0]
+
+    def get_nprobe(self) -> int:
+        return self._nprobe
 
 
 class LocalIndexServer:
@@ -122,6 +138,10 @@ class LocalIndexServer:
 
         query_vector = data["query_vector"]
         top_n = data.get("top_n", 10)
+        nprobe = data.get("nprobe", self._service.get_nprobe())
+
+        if "nprobe" in data:
+            logger.info(f"Using nprobe override: {nprobe}")
 
         # Validate vector dimensions
         if len(query_vector) != self._service.dimensions():
@@ -129,7 +149,7 @@ class LocalIndexServer:
             return self._error_response(msg, 400)
 
         try:
-            results = self._service.search(query_vector, top_n)
+            results = self._service.search(query_vector, top_n, nprobe)
 
             # Format the raw FAISS results into a more descriptive list of objects
             formatted_results = []
@@ -153,11 +173,53 @@ class LocalIndexServer:
         self._app.run(host=host, port=port)
 
 
+def parse_partitions(partition_str: str) -> List[int]:
+    partitions = set()
+    for part in partition_str.split(","):
+        if "-" in part:
+            start, end = part.split("-")
+            partitions.update(range(int(start), int(end) + 1))
+        else:
+            partitions.add(int(part))
+    if len(partitions) == 0:
+        raise ValueError(
+            "Invalid arguments:No partitions specified or partitions specified could not be parsed."
+        )
+    return sorted(list(partitions))
+
+
 def __main__():
-    # 1. Initialize the index service
-    svc = FaissIndexService(
-        "/Users/sreejithnoopur/codebase/faiss_index/local_{0}.index", [0, 1, 2, 3]
+    parser = argparse.ArgumentParser(description="FAISS Neighborhood Server")
+    parser.add_argument(
+        "--index_dir",
+        type=str,
+        required=True,
+        help="Directory where the index files are stored",
     )
+    parser.add_argument(
+        "--index_file_prefix",
+        type=str,
+        required=True,
+        help="The prefix of the index files (e.g., 'local_')",
+    )
+    parser.add_argument(
+        "--nprobe",
+        type=int,
+        default=1,
+        help="Number of inverted list probes to use for the FAISS search. A higher value increases search accuracy at the cost of slower query time",
+    )
+    parser.add_argument(
+        "--partitions",
+        type=str,
+        required=True,
+        help="List of partition numbers to load (e.g., '1,2,5-10')",
+    )
+    args = parser.parse_args()
+
+    index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{0}}.index"
+    partitions = parse_partitions(args.partitions)
+
+    svc = FaissIndexService(index_path_pattern, partitions, nprobe=args.nprobe)
 
     SERVER_HOST = "0.0.0.0"
     SERVER_PORT = 5001
