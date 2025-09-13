@@ -1,6 +1,7 @@
 import chromadb
 import logging
 import faiss
+import math
 import numpy as np
 
 from .storage_interface import StorageInterface
@@ -71,11 +72,10 @@ class FaissIvf(StorageInterface):
             raise ValueError("Faiss cannot be initialized without collection_dir.")
         if "dimensions" not in kwargs:
             raise ValueError("Faiss cannot be initialized without dimensions.")
-        if "nlist" not in kwargs:
-            self._nlist = 2**15  # ~ 10x sqrt(N); N is 10M
-        else:
-            self._nlist = kwargs["nlist"]
-
+        if "dataset_size" not in kwargs:
+            raise ValueError("Faiss cannot be initialized without dataset_size.")
+        
+        self._nlist =  10 * math.sqrt(kwargs["dataset_size"])
         self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
@@ -88,7 +88,9 @@ class FaissIvf(StorageInterface):
         )
 
         self._writer = IndexPartitionWriter(
-            self._index, 1000, self._collection_dir  # batch_size
+            centroid_index=self._index, 
+            batch_size=kwargs.get("write_partition_buffer_size", 1000),
+            collection_dir=self._collection_dir
         )
 
         logger.info(f"Number of clusters: {self._nlist}")

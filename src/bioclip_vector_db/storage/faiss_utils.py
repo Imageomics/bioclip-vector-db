@@ -18,7 +18,7 @@ class IndexPartitionWriter:
 
     def __init__(
         self, centroid_index: faiss.Index, batch_size: int, collection_dir: str,
-        cleanup_temp_files=False
+        cleanup_temp_files=True
     ):
         self._centroid_index = centroid_index
         self._partition_to_embedding_map = defaultdict(list)

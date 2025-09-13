@@ -5,6 +5,7 @@ Contains factory methods that abstracts the internal implementation details of v
 """
 
 import enum
+import math
 
 from .storage_interface import StorageInterface
 from . import storage_impl
@@ -34,9 +35,17 @@ def get_storage(storage_type: StorageEnum, dataset_type: HfDatasetType, **kwargs
     if storage_type == StorageEnum.FAISS_IVF:
         if "collection_dir" not in kwargs:
             raise ValueError("Faiss cannot be initialized without collection_dir.")
+        if "dataset_size" not in kwargs:
+            raise ValueError("Faiss cannot be initialized without an approximate dataset size.")
+        if "write_partition_buffer_size" not in kwargs:
+            raise ValueError("Faiss cannot be initialized without a write_partition_buffer_size.")
+        
         faiss_ivf = storage_impl.FaissIvf()
         return faiss_ivf.init(dataset_type.name, 
                               collection_dir=kwargs["collection_dir"],
-                              dimensions=512)
+                              dimensions=512,
+                              dataset_size=kwargs["dataset_size"],
+                              write_partition_buffer_size=kwargs["write_partition_buffer_size"]
+                              )
 
     raise ValueError(f"Invalid storage type: {storage_type}")
