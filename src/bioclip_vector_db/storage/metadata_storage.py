@@ -29,6 +29,7 @@ class MetadataDatabase:
             self._reset()
         self.create_table()
 
+
     def _get_connection(self) -> sqlite3.Connection:
         """Gets a thread-local database connection."""
         if not hasattr(self.local, "connection"):
@@ -54,6 +55,11 @@ class MetadataDatabase:
         except sqlite3.Error as e:
             logger.error(f"Error creating table: {e}")
             raise
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT count(*) FROM metadata")
+        result = cursor.fetchone()
+        logger.info(f"Total number of records: {result[0]}")
 
     def add_mapping(self, partition_id: int, faiss_id: int, original_id: str, metadata: Optional[Dict[str, Any]] = None):
         """
@@ -94,7 +100,7 @@ class MetadataDatabase:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT original_id FROM metadata WHERE partition_id = ? AND faiss_id = ?", (partition_id, faiss_id,))
+            cursor.execute(f"SELECT original_id FROM metadata WHERE partition_id = {partition_id} AND faiss_id = {faiss_id}")
             result = cursor.fetchone()
             return result[0] if result else None
         except sqlite3.Error as e:

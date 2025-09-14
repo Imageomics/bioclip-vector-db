@@ -89,6 +89,7 @@ class FaissIndexService:
         for id in self._indices.keys():
             distances, indices = self._search(query_vector, top_n, id, nprobe)
             results[id] = (distances, self._map_to_original_ids(id, indices))
+
         return results
 
     def is_trained(self) -> bool:
@@ -171,13 +172,13 @@ class LocalIndexServer:
 
         try:
             results = self._service.search(query_vector, top_n, nprobe)
-            
+
             # Format the raw FAISS results into a more descriptive list of objects
             formatted_results = []
             for index_id, (distances, indices) in results.items():
                 matches = [
-                    {"id": int(idx), "distance": float(dist)}
-                    for dist, idx in zip(distances[0], indices[0])
+                    {"id": idx, "distance": float(dist)}
+                    for dist, idx in zip(distances[0], indices)
                 ]
                 formatted_results.append({"index_id": index_id, "matches": matches})
 
