@@ -71,7 +71,7 @@ class MetadataDatabase:
             with conn:
                 conn.execute(
                     "INSERT INTO metadata (partition_id, faiss_id, original_id, metadata) VALUES (?, ?, ?, ?)",
-                    (partition_id, faiss_id, original_id, metadata_json)
+                    (int(partition_id), int(faiss_id), original_id, metadata_json)
                 )
                 logger.info(f"Added mapping: partition_id={partition_id}, faiss_id={faiss_id}, original_id={original_id}")
         except sqlite3.IntegrityError:

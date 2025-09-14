@@ -13,6 +13,8 @@ import argparse
 from typing import List, Dict
 from flask import Flask, request, jsonify
 
+from ..storage.metadata_storage import MetadataDatabase
+
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
@@ -20,11 +22,19 @@ logger = logging.getLogger()
 
 class FaissIndexService:
     def __init__(
-        self, index_path_pattern: str, neighborhood_ids: List[int], nprobe: int = 1
+        self,
+        index_path_pattern: str,
+        neighborhood_ids: List[int],
+        nprobe: int = 1,
+        metadata_db=None,
     ):
         self._index_path_pattern = index_path_pattern
         self._indices = {}
         self._nprobe = nprobe
+
+        if metadata_db is None:
+            raise ValueError("metadata_db cannot be None")
+        self._metadata_db = metadata_db
 
         self._load(neighborhood_ids)
 
@@ -49,12 +59,23 @@ class FaissIndexService:
             )
             sys.exit(1)
 
-    def _search(self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1):
+    def _search(
+        self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1
+    ):
         """Performs a search on the loaded FAISS local index."""
         query_np = np.array([query_vector]).astype("float32")
         index = self._indices[neighborhood_id]
         index.nprobe = nprobe
         return index.search(query_np, top_n)
+
+    def _map_to_original_ids(self, neighborhood_id: int, local_indices: Dict) -> Dict:
+        """Maps local indices to original IDs."""
+        return list(
+            map(
+                lambda id: self._metadata_db.get_original_id(neighborhood_id, id),
+                local_indices[0],
+            )
+        )
 
     def search(
         self, query_vector: list, top_n: int, nprobe: int = 1
@@ -67,7 +88,7 @@ class FaissIndexService:
         results = {}
         for id in self._indices.keys():
             distances, indices = self._search(query_vector, top_n, id, nprobe)
-            results[id] = (distances, indices)
+            results[id] = (distances, self._map_to_original_ids(id, indices))
         return results
 
     def is_trained(self) -> bool:
@@ -150,7 +171,7 @@ class LocalIndexServer:
 
         try:
             results = self._service.search(query_vector, top_n, nprobe)
-
+            
             # Format the raw FAISS results into a more descriptive list of objects
             formatted_results = []
             for index_id, (distances, indices) in results.items():
@@ -219,7 +240,11 @@ def __main__():
     index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{0}}.index"
     partitions = parse_partitions(args.partitions)
 
-    svc = FaissIndexService(index_path_pattern, partitions, nprobe=args.nprobe)
+    metadata_db = MetadataDatabase(args.index_dir)
+
+    svc = FaissIndexService(
+        index_path_pattern, partitions, nprobe=args.nprobe, metadata_db=metadata_db
+    )
 
     SERVER_HOST = "0.0.0.0"
     SERVER_PORT = 5001
