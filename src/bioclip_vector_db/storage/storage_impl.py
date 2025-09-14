@@ -1,10 +1,13 @@
 import chromadb
 import logging
 import faiss
+import math
 import numpy as np
 
 from .storage_interface import StorageInterface
+from .faiss_utils import IndexPartitionWriter
 from typing import List, Dict
+from collections import defaultdict
 
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
@@ -63,18 +66,16 @@ class Chroma(StorageInterface):
 
 class FaissIvf(StorageInterface):
     """Faiss index with inverted file index. Requires training to use."""
-    # TODO: Write index in shards. 
-    
+
     def init(self, name: str, **kwargs):
         if "collection_dir" not in kwargs:
             raise ValueError("Faiss cannot be initialized without collection_dir.")
         if "dimensions" not in kwargs:
             raise ValueError("Faiss cannot be initialized without dimensions.")
-        if "nlist" not in kwargs:
-            self._nlist = 2**15 # ~ 10x sqrt(N); N is 10M
-        else:
-            self._nlist = kwargs["nlist"]
-
+        if "dataset_size" not in kwargs:
+            raise ValueError("Faiss cannot be initialized without dataset_size.")
+        
+        self._nlist =  10 * math.sqrt(kwargs["dataset_size"])
         self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
@@ -82,24 +83,38 @@ class FaissIvf(StorageInterface):
         self._factory_string = f"IVF{self._nlist},SQfp16"
 
         self._index = faiss.index_factory(self._dimensions, self._factory_string)
-
         logger.info(
             f"Initializing Faiss client with the factory string: {self._factory_string}."
         )
+
+        self._writer = IndexPartitionWriter(
+            centroid_index=self._index, 
+            batch_size=kwargs.get("write_partition_buffer_size", 1000),
+            collection_dir=self._collection_dir
+        )
+
         logger.info(f"Number of clusters: {self._nlist}")
         logger.info(f"Training set size: {self._train_set_size}")
 
         self._train_ids = []
         self._train_embeddings = []
         self._train_metadatas = []
-        
+
         # todo: sreejith; has to be written to some other db store.
         self._metadata_store = {}
         return self
-    
-    def _add_embedding_to_index(self, id: str, embedding: List[float], metadata: Dict[str, str]):
-        self._index.add(np.array([embedding]).astype("float32"))
-        self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata} 
+
+    def _make_temp_local_index_map(self):
+        self._local_index_map = {
+            i: self._local_index.format(idx=i) for i in range(self._nlist)
+        }
+
+    def _add_embedding_to_index(
+        self, id: str, embedding: List[float], metadata: Dict[str, str]
+    ):
+        embedding_np = np.array([embedding]).astype("float32")
+        self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata}
+        self._writer.add_embedding(embedding_np)
 
     def add_embedding(self, id: str, embedding: List[float], metadata: Dict[str, str]):
         if len(self._train_ids) < self._train_set_size:
@@ -107,7 +122,7 @@ class FaissIvf(StorageInterface):
             self._train_embeddings.append(embedding)
             self._train_metadatas.append(metadata)
         elif not self._index.is_trained:
-            self._train_index() 
+            self._train_index()
         else:
             self._add_embedding_to_index(id, embedding, metadata)
 
@@ -127,7 +142,6 @@ class FaissIvf(StorageInterface):
             for id, embedding, metadata in zip(ids, embeddings, metadatas):
                 self._add_embedding_to_index(id, embedding, metadata)
 
-
     def query(self, id: str):
         pass
 
@@ -141,8 +155,10 @@ class FaissIvf(StorageInterface):
         logging.info("Training complete.")
 
         # once trained, add all the training data back into the db.
-        for id, embedding, metadata in zip(self._train_ids, self._train_embeddings, self._train_metadatas):
+        for id, embedding, metadata in zip(
+            self._train_ids, self._train_embeddings, self._train_metadatas
+        ):
             self._add_embedding_to_index(id, embedding, metadata)
 
     def flush(self):
-        faiss.write_index(self._index, f"{self._collection_dir}/faiss.index")
+        self._writer.close()

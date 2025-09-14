@@ -228,6 +228,28 @@ def main():
         help="Specifies the batch size which determine the number of datapoints which will be read at once from the dataset.",
     )
 
+    parser.add_argument(
+        "--dataset_size",
+        type=int,
+        default=10_000_000,
+        help="FAISS: Specifies the approximate size of the dataset that is being indexed.",
+    )
+
+    parser.add_argument(
+        "--write_partition_buffer_size",
+        type=int,
+        default=1000,
+        help="FAISS: Specifies the buffer size of the write partition. Setting this as a large number will reduce total number of writes but will increase the memory footprint.",
+    )
+
+    parser.add_argument(
+        "--storage",
+        type=lambda s: storage_factory.StorageEnum[s.upper()],
+        choices=list(storage_factory.StorageEnum),
+        required=True,
+        help="Storage to be used for creating the vector database.",
+    )
+
     args = parser.parse_args()
     dataset = args.dataset
     output_dir = args.output_dir
@@ -238,12 +260,16 @@ def main():
     logger.info(f"Creating database for dataset: {dataset.value}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Resetting the database: {args.reset}")
+    logger.info(f"Using storage: {args.storage}")
+    logging.info(f"Approximate dataset size: {args.dataset_size}")
 
     # Currently only CHROMA backend is supported so hardcoding is fine.
     storage_obj = storage_factory.get_storage(
-        storage_type=storage_factory.StorageEnum.FAISS_IVF,
+        storage_type=args.storage,
         dataset_type=dataset,
         collection_dir=output_dir,
+        dataset_size=args.dataset_size,
+        write_partition_buffer_size=args.write_partition_buffer_size
     )
     if args.reset:
         logger.warning("Resetting the database..")
