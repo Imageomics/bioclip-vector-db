@@ -24,7 +24,7 @@ class IndexPartitionWriter:
         centroid_index: faiss.Index,
         batch_size: int,
         collection_dir: str,
-        cleanup_temp_files=False,
+        cleanup_temp_files=True,
     ):
         """Initializes the IndexPartitionWriter.
 
@@ -42,11 +42,11 @@ class IndexPartitionWriter:
         self._centroid_index_file = "leader.index"
         self._local_index_file = "local_{idx}.index"
         self._cleanup_temp_files = cleanup_temp_files
-        self._metadata_db = MetadataDatabase(collection_dir)
         self._partition_faiss_ids = defaultdict(int)
 
         # Ensure the output directory exists
         os.makedirs(self._collection_dir, exist_ok=True)
+        self._metadata_db = MetadataDatabase(collection_dir)
 
     @staticmethod
     def _make_temp_numpy_file(collection_dir: str, partition_id: int):
