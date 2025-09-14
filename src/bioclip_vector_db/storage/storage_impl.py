@@ -75,7 +75,7 @@ class FaissIvf(StorageInterface):
         if "dataset_size" not in kwargs:
             raise ValueError("Faiss cannot be initialized without dataset_size.")
         
-        self._nlist =  10 * math.sqrt(kwargs["dataset_size"])
+        self._nlist =  math.floor(10 * math.sqrt(kwargs["dataset_size"]))
         self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
