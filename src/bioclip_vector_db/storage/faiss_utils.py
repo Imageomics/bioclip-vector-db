@@ -108,10 +108,7 @@ class IndexPartitionWriter:
             embedding = embedding.reshape(1, -1)
 
         _, partition_ids = self._centroid_index.quantizer.search(embedding, 1)
-        partition_id = partition_ids[0][0]
-
-        logger.warning("THIS IS THE PARTITION ID: ", partition_id)
-        logger.warning("THIS IS THE ORIGINAL ID: ", original_id)
+        partition_id = int(partition_ids[0][0])
 
         faiss_id = self._partition_faiss_ids[partition_id]
         self._metadata_db.add_mapping(partition_id, faiss_id, original_id)
