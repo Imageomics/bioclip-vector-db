@@ -9,6 +9,9 @@ import json
 import logging
 import sys
 import argparse
+import time
+import functools
+
 
 from typing import List, Dict
 from flask import Flask, request, jsonify
@@ -18,6 +21,28 @@ from ..storage.metadata_storage import MetadataDatabase
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
+
+
+def timer(func):
+    """A decorator that prints the time a function takes to run."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Record the start time
+        start_time = time.perf_counter()
+        
+        # Call the original function and store its result
+        value = func(*args, **kwargs)
+        
+        # Record the end time and calculate the duration
+        end_time = time.perf_counter()
+        run_time = end_time - start_time
+        
+        # Print the duration
+        logger.info(f"Finished '{func.__name__}' in {run_time:.4f} secs")
+        
+        # Return the original function's result
+        return value
+    return wrapper
 
 
 class FaissIndexService:
@@ -76,7 +101,8 @@ class FaissIndexService:
                 local_indices[0],
             )
         )
-
+    
+    @timer
     def search(
         self, query_vector: list, top_n: int, nprobe: int = 1
     ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
@@ -151,6 +177,12 @@ class LocalIndexServer:
         # Use 503 Service Unavailable when the service is not ready
         return self._error_response("Index not loaded or trained", 503)
 
+    def _handle_merging(self, results):
+        all_matches = [
+            match for matches_dict in results for match in matches_dict["matches"]
+        ]
+        return sorted(all_matches, key=lambda item: item["distance"])
+
     def handle_search(self):
         """Handler for the /search endpoint."""
         data = request.get_json()
@@ -161,6 +193,7 @@ class LocalIndexServer:
         query_vector = data["query_vector"]
         top_n = data.get("top_n", 10)
         nprobe = data.get("nprobe", self._service.get_nprobe())
+        is_verbose = data.get("verbose", False)
 
         if "nprobe" in data:
             logger.info(f"Using nprobe override: {nprobe}")
@@ -175,14 +208,23 @@ class LocalIndexServer:
 
             # Format the raw FAISS results into a more descriptive list of objects
             formatted_results = []
-            for index_id, (distances, indices) in results.items():
+            for partition_id, (distances, indices) in results.items():
                 matches = [
                     {"id": idx, "distance": float(dist)}
                     for dist, idx in zip(distances[0], indices)
                 ]
-                formatted_results.append({"index_id": index_id, "matches": matches})
+                formatted_results.append(
+                    {"partition_id": partition_id, "matches": matches}
+                )
 
-            return self._success_response({"results": formatted_results})
+            merged_neighbors = self._handle_merging(formatted_results)
+
+            if is_verbose:
+                return self._success_response(
+                    {"results": formatted_results, "merged_neighbors": merged_neighbors}
+                )
+            else:
+                return self._success_response({"merged_neighbors": merged_neighbors})
 
         except Exception as e:
             logger.error(f"An error occurred during search: {e}", exc_info=True)

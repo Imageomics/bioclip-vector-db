@@ -2,10 +2,11 @@ import sqlite3
 import threading
 import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import os
 
 logger = logging.getLogger(__name__)
+
 
 class MetadataDatabase:
     """
@@ -29,11 +30,12 @@ class MetadataDatabase:
             self._reset()
         self.create_table()
 
-
     def _get_connection(self) -> sqlite3.Connection:
         """Gets a thread-local database connection."""
         if not hasattr(self.local, "connection"):
-            self.local.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.local.connection = sqlite3.connect(
+                self.db_path, check_same_thread=False
+            )
         return self.local.connection
 
     def create_table(self):
@@ -41,7 +43,8 @@ class MetadataDatabase:
         conn = self._get_connection()
         try:
             with conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS metadata (
                         partition_id INTEGER NOT NULL,
                         faiss_id INTEGER NOT NULL,
@@ -50,7 +53,8 @@ class MetadataDatabase:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         PRIMARY KEY (partition_id, faiss_id)
                     )
-                """)
+                """
+                )
                 logger.info("SQLITE: Create table successful.")
         except sqlite3.Error as e:
             logger.error(f"Error creating table: {e}")
@@ -61,7 +65,13 @@ class MetadataDatabase:
         result = cursor.fetchone()
         logger.info(f"Total number of records: {result[0]}")
 
-    def add_mapping(self, partition_id: int, faiss_id: int, original_id: str, metadata: Optional[Dict[str, Any]] = None):
+    def add_mapping(
+        self,
+        partition_id: int,
+        faiss_id: int,
+        original_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
         """
         Adds a mapping between a FAISS ID and an original ID for a given partition.
 
@@ -77,11 +87,15 @@ class MetadataDatabase:
             with conn:
                 conn.execute(
                     "INSERT INTO metadata (partition_id, faiss_id, original_id, metadata) VALUES (?, ?, ?, ?)",
-                    (int(partition_id), int(faiss_id), original_id, metadata_json)
+                    (int(partition_id), int(faiss_id), original_id, metadata_json),
                 )
-                logger.debug(f"Added mapping: partition_id={partition_id}, faiss_id={faiss_id}, original_id={original_id}")
+                logger.debug(
+                    f"Added mapping: partition_id={partition_id}, faiss_id={faiss_id}, original_id={original_id}"
+                )
         except sqlite3.IntegrityError:
-            logger.warning(f"faiss_id {faiss_id} in partition {partition_id} already exists. Ignoring.")
+            logger.warning(
+                f"faiss_id {faiss_id} in partition {partition_id} already exists. Ignoring."
+            )
         except sqlite3.Error as e:
             logger.error(f"Error adding mapping: {e}")
             raise
@@ -100,12 +114,19 @@ class MetadataDatabase:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT original_id FROM metadata WHERE partition_id = {partition_id} AND faiss_id = {faiss_id}")
+            cursor.execute(
+                "SELECT original_id FROM metadata WHERE partition_id = ? AND faiss_id = ?",
+                (int(partition_id), int(faiss_id)),
+            )
             result = cursor.fetchone()
             return result[0] if result else None
         except sqlite3.Error as e:
             logger.error(f"Error getting original_id: {e}")
             raise
+
+    def batch_get_original_id(self, partition_id: int, faiss_ids: List[int]) -> Dict[int, str]:
+        # Implement me.
+        pass
 
     def get_faiss_id(self, original_id: str) -> Optional[int]:
         """
@@ -120,7 +141,9 @@ class MetadataDatabase:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT faiss_id FROM metadata WHERE original_id = ?", (original_id,))
+            cursor.execute(
+                "SELECT faiss_id FROM metadata WHERE original_id = ?", (original_id,)
+            )
             result = cursor.fetchone()
             return result[0] if result else None
         except sqlite3.Error as e:
