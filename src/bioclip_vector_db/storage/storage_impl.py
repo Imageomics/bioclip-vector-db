@@ -75,7 +75,7 @@ class FaissIvf(StorageInterface):
         if "dataset_size" not in kwargs:
             raise ValueError("Faiss cannot be initialized without dataset_size.")
         
-        self._nlist =  10 * math.sqrt(kwargs["dataset_size"])
+        self._nlist =  math.floor(10 * math.sqrt(kwargs["dataset_size"]))
         self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
@@ -100,8 +100,6 @@ class FaissIvf(StorageInterface):
         self._train_embeddings = []
         self._train_metadatas = []
 
-        # todo: sreejith; has to be written to some other db store.
-        self._metadata_store = {}
         return self
 
     def _make_temp_local_index_map(self):
@@ -113,8 +111,7 @@ class FaissIvf(StorageInterface):
         self, id: str, embedding: List[float], metadata: Dict[str, str]
     ):
         embedding_np = np.array([embedding]).astype("float32")
-        self._metadata_store[self._index.ntotal] = {"id": id, "metadata": metadata}
-        self._writer.add_embedding(embedding_np)
+        self._writer.add_embedding(id, embedding_np)
 
     def add_embedding(self, id: str, embedding: List[float], metadata: Dict[str, str]):
         if len(self._train_ids) < self._train_set_size:
