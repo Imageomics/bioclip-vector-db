@@ -6,10 +6,11 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+
 class NearestNeighborClient:
     """A client for querying multiple LocalIndexServer instances."""
 
-    def __init__(self, server_urls: List[str]):
+    def __init__(self, server_urls: List[str], global_max_neighbors=100):
         """
         Initializes the client with a list of server URLs.
 
@@ -18,6 +19,7 @@ class NearestNeighborClient:
         if not server_urls:
             raise ValueError("server_urls cannot be empty.")
         self._server_urls = server_urls
+        self._global_max_neighbors = global_max_neighbors
 
     def _post_request(self, url: str, json_data: Dict[str, Any]) -> Dict[str, Any]:
         """Sends a POST request to a given URL and returns the JSON response."""
@@ -29,7 +31,9 @@ class NearestNeighborClient:
             logger.error(f"Request to {url} failed: {e}")
             return {"status": "error", "error": {"message": str(e)}}
 
-    def search(self, query_vector: List[float], top_n: int = 10, nprobe: int = 1) -> List[Dict[str, Any]]:
+    def search(
+        self, query_vector: List[float], top_n: int = 10, nprobe: int = 1
+    ) -> List[Dict[str, Any]]:
         """
         Queries all configured servers for the nearest neighbors.
 
@@ -43,12 +47,26 @@ class NearestNeighborClient:
             "query_vector": query_vector,
             "top_n": top_n,
             "nprobe": nprobe,
+            "verbose": False,
         }
         for url in self._server_urls:
             search_url = f"{url}/search"
             result = self._post_request(search_url, search_payload)
             results.append({"server": url, "response": result})
-        return results
+
+        return self._merge_results(results)
+
+    def _merge_results(self, results):
+        """
+        Produces a global merged result list.
+        """
+        global_merged_results = []
+        for result in results:
+            global_merged_results.extend(result["response"]["data"]["merged_neighbors"])
+
+        return sorted(global_merged_results, key=lambda x: x["distance"])[
+            : self._global_max_neighbors
+        ]
 
     def health(self) -> List[Dict[str, Any]]:
         """
@@ -65,15 +83,23 @@ class NearestNeighborClient:
                 health_statuses.append({"server": url, "response": response.json()})
             except requests.exceptions.RequestException as e:
                 logger.error(f"Health check for {url} failed: {e}")
-                health_statuses.append({"server": url, "response": {"status": "error", "error": {"message": str(e)}}})
+                health_statuses.append(
+                    {
+                        "server": url,
+                        "response": {"status": "error", "error": {"message": str(e)}},
+                    }
+                )
         return health_statuses
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Configure logging
-    logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s')
+    logging.basicConfig(
+        level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(message)s"
+    )
 
     # List of server URLs to query
-    SERVER_URLS = [f"http://0.0.0.0:{port}" for port in range(5001, 5007)]
+    SERVER_URLS = [f"http://0.0.0.0:{port}" for port in range(5001, 5004)]
 
     # Initialize the client
     client = NearestNeighborClient(SERVER_URLS)
@@ -85,7 +111,7 @@ if __name__ == '__main__':
 
     # 2. Perform a search
     print("\n--- Performing search ---")
-    
+
     # Create a dummy query vector.
     # IMPORTANT: The dimension of this vector must match the dimension of the vectors in the FAISS index.
     # For BioCLIP models, this is often 512 or 768. We'll use 512 as an example.
@@ -93,7 +119,7 @@ if __name__ == '__main__':
     dummy_query_vector = [random.random() for _ in range(DUMMY_VECTOR_DIM)]
 
     # Perform the search
-    search_results = client.search(query_vector=dummy_query_vector, top_n=5, nprobe=10)
+    search_results = client.search(query_vector=dummy_query_vector, top_n=1, nprobe=10)
 
     # Print the results
     print(json.dumps(search_results, indent=2))
