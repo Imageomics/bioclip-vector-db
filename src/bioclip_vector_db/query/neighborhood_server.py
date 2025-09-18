@@ -278,6 +278,12 @@ def __main__():
         required=True,
         help="List of partition numbers to load (e.g., '1,2,5-10')",
     )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=5001,
+        help="Port to run the server on",
+    )
     args = parser.parse_args()
 
     index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{0}}.index"
@@ -290,7 +296,7 @@ def __main__():
     )
 
     SERVER_HOST = "0.0.0.0"
-    SERVER_PORT = 5001
+    SERVER_PORT = args.port
 
     # 2. Initialize the server with the index service
     server = LocalIndexServer(service=svc)
