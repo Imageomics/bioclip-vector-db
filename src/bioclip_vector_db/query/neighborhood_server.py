@@ -9,22 +9,57 @@ import json
 import logging
 import sys
 import argparse
+import time
+import functools
+
 
 from typing import List, Dict
 from flask import Flask, request, jsonify
+
+from ..storage.metadata_storage import MetadataDatabase
 
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
 
 
+def timer(func):
+    """A decorator that prints the time a function takes to run."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Record the start time
+        start_time = time.perf_counter()
+        
+        # Call the original function and store its result
+        value = func(*args, **kwargs)
+        
+        # Record the end time and calculate the duration
+        end_time = time.perf_counter()
+        run_time = end_time - start_time
+        
+        # Print the duration
+        logger.info(f"Finished '{func.__name__}' in {run_time:.4f} secs")
+        
+        # Return the original function's result
+        return value
+    return wrapper
+
+
 class FaissIndexService:
     def __init__(
-        self, index_path_pattern: str, neighborhood_ids: List[int], nprobe: int = 1
+        self,
+        index_path_pattern: str,
+        neighborhood_ids: List[int],
+        nprobe: int = 1,
+        metadata_db=None,
     ):
         self._index_path_pattern = index_path_pattern
         self._indices = {}
         self._nprobe = nprobe
+
+        if metadata_db is None:
+            raise ValueError("metadata_db cannot be None")
+        self._metadata_db = metadata_db
 
         self._load(neighborhood_ids)
 
@@ -49,13 +84,25 @@ class FaissIndexService:
             )
             sys.exit(1)
 
-    def _search(self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1):
+    def _search(
+        self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1
+    ):
         """Performs a search on the loaded FAISS local index."""
         query_np = np.array([query_vector]).astype("float32")
         index = self._indices[neighborhood_id]
         index.nprobe = nprobe
         return index.search(query_np, top_n)
 
+    def _map_to_original_ids(self, neighborhood_id: int, local_indices: Dict) -> Dict:
+        """Maps local indices to original IDs."""
+        return list(
+            map(
+                lambda id: self._metadata_db.get_original_id(neighborhood_id, id),
+                local_indices[0],
+            )
+        )
+    
+    @timer
     def search(
         self, query_vector: list, top_n: int, nprobe: int = 1
     ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
@@ -67,7 +114,8 @@ class FaissIndexService:
         results = {}
         for id in self._indices.keys():
             distances, indices = self._search(query_vector, top_n, id, nprobe)
-            results[id] = (distances, indices)
+            results[id] = (distances, self._map_to_original_ids(id, indices))
+
         return results
 
     def is_trained(self) -> bool:
@@ -129,6 +177,12 @@ class LocalIndexServer:
         # Use 503 Service Unavailable when the service is not ready
         return self._error_response("Index not loaded or trained", 503)
 
+    def _handle_merging(self, results):
+        all_matches = [
+            match for matches_dict in results for match in matches_dict["matches"]
+        ]
+        return sorted(all_matches, key=lambda item: item["distance"])
+
     def handle_search(self):
         """Handler for the /search endpoint."""
         data = request.get_json()
@@ -139,6 +193,7 @@ class LocalIndexServer:
         query_vector = data["query_vector"]
         top_n = data.get("top_n", 10)
         nprobe = data.get("nprobe", self._service.get_nprobe())
+        is_verbose = data.get("verbose", False)
 
         if "nprobe" in data:
             logger.info(f"Using nprobe override: {nprobe}")
@@ -153,14 +208,23 @@ class LocalIndexServer:
 
             # Format the raw FAISS results into a more descriptive list of objects
             formatted_results = []
-            for index_id, (distances, indices) in results.items():
+            for partition_id, (distances, indices) in results.items():
                 matches = [
-                    {"id": int(idx), "distance": float(dist)}
-                    for dist, idx in zip(distances[0], indices[0])
+                    {"id": idx, "distance": float(dist)}
+                    for dist, idx in zip(distances[0], indices)
                 ]
-                formatted_results.append({"index_id": index_id, "matches": matches})
+                formatted_results.append(
+                    {"partition_id": partition_id, "matches": matches}
+                )
 
-            return self._success_response({"results": formatted_results})
+            merged_neighbors = self._handle_merging(formatted_results)
+
+            if is_verbose:
+                return self._success_response(
+                    {"results": formatted_results, "merged_neighbors": merged_neighbors}
+                )
+            else:
+                return self._success_response({"merged_neighbors": merged_neighbors})
 
         except Exception as e:
             logger.error(f"An error occurred during search: {e}", exc_info=True)
@@ -214,15 +278,25 @@ def __main__():
         required=True,
         help="List of partition numbers to load (e.g., '1,2,5-10')",
     )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=5001,
+        help="Port to run the server on",
+    )
     args = parser.parse_args()
 
     index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{0}}.index"
     partitions = parse_partitions(args.partitions)
 
-    svc = FaissIndexService(index_path_pattern, partitions, nprobe=args.nprobe)
+    metadata_db = MetadataDatabase(args.index_dir)
+
+    svc = FaissIndexService(
+        index_path_pattern, partitions, nprobe=args.nprobe, metadata_db=metadata_db
+    )
 
     SERVER_HOST = "0.0.0.0"
-    SERVER_PORT = 5001
+    SERVER_PORT = args.port
 
     # 2. Initialize the server with the index service
     server = LocalIndexServer(service=svc)
