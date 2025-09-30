@@ -5,6 +5,7 @@ Usage:
 
 import numpy as np
 import faiss
+import os
 import json
 import logging
 import sys
@@ -25,23 +26,25 @@ logger = logging.getLogger()
 
 def timer(func):
     """A decorator that prints the time a function takes to run."""
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Record the start time
         start_time = time.perf_counter()
-        
+
         # Call the original function and store its result
         value = func(*args, **kwargs)
-        
+
         # Record the end time and calculate the duration
         end_time = time.perf_counter()
         run_time = end_time - start_time
-        
+
         # Print the duration
         logger.info(f"Finished '{func.__name__}' in {run_time:.4f} secs")
-        
+
         # Return the original function's result
         return value
+
     return wrapper
 
 
@@ -50,12 +53,25 @@ class FaissIndexService:
         self,
         index_path_pattern: str,
         neighborhood_ids: List[int],
+        leader_index_path: str,
         nprobe: int = 1,
         metadata_db=None,
     ):
         self._index_path_pattern = index_path_pattern
         self._indices = {}
         self._nprobe = nprobe
+
+        if leader_index_path is None or not os.path.exists(leader_index_path):
+            logger.error(f"Loading leader index from: {leader_index_path}")
+            raise ValueError(
+                f"Leader index not found or is not set: {leader_index_path}"
+            )
+
+        self._leader_index = faiss.read_index(leader_index_path)
+        if not hasattr(self._leader_index, "quantizer"):
+            raise ValueError(
+                "Loaded leader index does not have the quantizer attribute."
+            )
 
         if metadata_db is None:
             raise ValueError("metadata_db cannot be None")
@@ -101,20 +117,48 @@ class FaissIndexService:
                 local_indices[0],
             )
         )
-    
+
+    def _search_leader(self, query_vector: list, top_n: int) -> np.ndarray:
+        """Performs a search on the loaded FAISS leader index."""
+        query_np = np.array([query_vector]).astype("float32")
+        _, partition_ids = self._leader_index.quantizer.search(query_np, top_n)
+        return partition_ids[0]
+
     @timer
     def search(
         self, query_vector: list, top_n: int, nprobe: int = 1
     ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
-        """Performs a search on the loaded FAISS index."""
+        """
+        Performs a search on the loaded FAISS index.
+        This method first queries the leader index to identify the most relevant partitions,
+        and then searches within those partitions if they are loaded.
+        """
         assert all(
             [idx is not None for idx in self._indices.values()]
         ), "Index not loaded"
 
+        # Query the leader index to find the most relevant partitions.
+        # The `nprobe` parameter determines how many partitions to check.
+        partition_ids_to_search = self._search_leader(query_vector, nprobe)
+        logger.info(f"Leader search returned partitions: {partition_ids_to_search}")
+
         results = {}
-        for id in self._indices.keys():
-            distances, indices = self._search(query_vector, top_n, id, nprobe)
-            results[id] = (distances, self._map_to_original_ids(id, indices))
+        for partition_id in partition_ids_to_search:
+            # Check if the partition's index is loaded in this server.
+            if partition_id in self._indices:
+                logger.info(f"Searching in loaded partition: {partition_id}")
+
+                distances, indices = self._search(
+                    query_vector, top_n, partition_id, nprobe
+                )
+                results[partition_id] = (
+                    distances,
+                    self._map_to_original_ids(partition_id, indices),
+                )
+            else:
+                logger.warning(
+                    f"Partition {partition_id} not loaded in this server, skipping."
+                )
 
         return results
 
@@ -191,6 +235,7 @@ class LocalIndexServer:
             return self._error_response("Missing 'query_vector' in JSON body", 400)
 
         query_vector = data["query_vector"]
+        # number of neighbors to return from each local neighborhood.
         top_n = data.get("top_n", 10)
         nprobe = data.get("nprobe", self._service.get_nprobe())
         is_verbose = data.get("verbose", False)
@@ -267,6 +312,12 @@ def __main__():
         help="The prefix of the index files (e.g., 'local_')",
     )
     parser.add_argument(
+        "--leader_index",
+        type=str,
+        required=True,
+        help="The leader index file, which contains all the centroids",
+    )
+    parser.add_argument(
         "--nprobe",
         type=int,
         default=1,
@@ -287,12 +338,17 @@ def __main__():
     args = parser.parse_args()
 
     index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{0}}.index"
+    leader_index_path = f"{args.index_dir}/{args.leader_index}"
     partitions = parse_partitions(args.partitions)
 
     metadata_db = MetadataDatabase(args.index_dir)
 
     svc = FaissIndexService(
-        index_path_pattern, partitions, nprobe=args.nprobe, metadata_db=metadata_db
+        index_path_pattern,
+        partitions,
+        leader_index_path,
+        nprobe=args.nprobe,
+        metadata_db=metadata_db,
     )
 
     SERVER_HOST = "0.0.0.0"
