@@ -1,9 +1,0 @@
-numpy==1.*
-torch
-datasets
-pybioclip
-chromadb
-tqdm
-webdataset
-faiss-gpu
-flask
