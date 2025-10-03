@@ -5,12 +5,15 @@ Usage:
 
 import numpy as np
 import faiss
+import os
 import json
 import logging
 import sys
 import argparse
 import time
 import functools
+import random
+from collections import OrderedDict
 
 
 from typing import List, Dict
@@ -18,6 +21,8 @@ from flask import Flask, request, jsonify
 
 from ..storage.metadata_storage import MetadataDatabase
 
+# Maximum number of neighborhoods to load in memory.
+MAX_CACHE_SIZE = 10
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
@@ -25,23 +30,25 @@ logger = logging.getLogger()
 
 def timer(func):
     """A decorator that prints the time a function takes to run."""
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Record the start time
         start_time = time.perf_counter()
-        
+
         # Call the original function and store its result
         value = func(*args, **kwargs)
-        
+
         # Record the end time and calculate the duration
         end_time = time.perf_counter()
         run_time = end_time - start_time
-        
+
         # Print the duration
         logger.info(f"Finished '{func.__name__}' in {run_time:.4f} secs")
-        
+
         # Return the original function's result
         return value
+
     return wrapper
 
 
@@ -50,18 +57,57 @@ class FaissIndexService:
         self,
         index_path_pattern: str,
         neighborhood_ids: List[int],
+        leader_index_path: str,
         nprobe: int = 1,
         metadata_db=None,
+        use_cache=False,
     ):
+        """
+        Initializes the FaissIndexService.
+
+        Args:
+            index_path_pattern (str): A string pattern for the local index files,
+                e.g., 'index_{}.faiss'. The '{}' is a placeholder for the neighborhood_id.
+            neighborhood_ids (List[int]): A list of neighborhood IDs to load.
+            leader_index_path (str): The path to the leader index file.
+            nprobe (int, optional): The number of partitions to search. Defaults to 1.
+            metadata_db (MetadataDatabase, optional): An instance of MetadataDatabase.
+                Defaults to None.
+            use_cache (bool, optional): Whether to use caching. Defaults to False. If enabled, 
+                lazy loading of the local neighborhoods will happen.
+        """
         self._index_path_pattern = index_path_pattern
-        self._indices = {}
+        self._indices = OrderedDict()
         self._nprobe = nprobe
+        self._use_cache = use_cache
+
+        if self._use_cache and self._nprobe > MAX_CACHE_SIZE:
+            raise ValueError(f"nprobe cannot be greater than MAX_CACHE_SIZE: {MAX_CACHE_SIZE}")
+            
+
+        if leader_index_path is None or not os.path.exists(leader_index_path):
+            logger.error(f"Loading leader index from: {leader_index_path}")
+            raise ValueError(
+                f"Leader index not found or is not set: {leader_index_path}"
+            )
+
+        self._leader_index = faiss.read_index(leader_index_path)
+        if not hasattr(self._leader_index, "quantizer"):
+            raise ValueError(
+                "Loaded leader index does not have the quantizer attribute."
+            )
 
         if metadata_db is None:
             raise ValueError("metadata_db cannot be None")
         self._metadata_db = metadata_db
 
-        self._load(neighborhood_ids)
+        if not use_cache:
+            print(neighborhood_ids)
+            self._load(neighborhood_ids)
+        else:
+            self._cache_miss = 0
+            self._cache_hits = 0
+            self._cache_evictions = 0
 
     def _load(self, neighborhood_ids: List[int]):
         """Loads the FAISS index from the specified path."""
@@ -84,6 +130,33 @@ class FaissIndexService:
             )
             sys.exit(1)
 
+    def _load_with_cache(self, neighborhood_ids: List[int]):
+        """
+        Loads neighborhood indices into an LRU cache.
+        If the cache is full, it evicts the least recently used item.
+        """
+        for neighborhood_id in neighborhood_ids:
+            if neighborhood_id in self._indices:
+                self._cache_hits += 1
+                self._indices.move_to_end(neighborhood_id)
+                logger.info(f"Neighborhood {neighborhood_id} already in cache. Moved to most recently used.")
+                continue
+            
+            self._cache_miss += 1
+            if len(self._indices) >= MAX_CACHE_SIZE:
+                self._cache_evictions += 1
+                evicted_id, _ = self._indices.popitem(last=False)
+                logger.info(f"Cache full. Evicting neighborhood: {evicted_id}")
+
+            file_path = self._index_path_pattern.format(neighborhood_id)
+            logger.info(f"Loading index file into cache: {file_path}")
+            try:
+                index = faiss.read_index(file_path)
+                index.nprobe = self._nprobe
+                self._indices[neighborhood_id] = index
+            except Exception as e:
+                logger.error(f"Error loading index file {file_path}: {e}")
+
     def _search(
         self, query_vector: list, top_n: int, neighborhood_id: int, nprobe: int = 1
     ):
@@ -101,20 +174,51 @@ class FaissIndexService:
                 local_indices[0],
             )
         )
-    
+
+    def _search_leader(self, query_vector: list, top_n: int) -> np.ndarray:
+        """Performs a search on the loaded FAISS leader index."""
+        query_np = np.array([query_vector]).astype("float32")
+        _, partition_ids = self._leader_index.quantizer.search(query_np, top_n)
+        return partition_ids[0]
+
     @timer
     def search(
         self, query_vector: list, top_n: int, nprobe: int = 1
     ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
-        """Performs a search on the loaded FAISS index."""
+        """
+        Performs a search on the loaded FAISS index.
+        This method first queries the leader index to identify the most relevant partitions,
+        and then searches within those partitions if they are loaded.
+        """
         assert all(
             [idx is not None for idx in self._indices.values()]
         ), "Index not loaded"
 
+        # Query the leader index to find the most relevant partitions.
+        # The `nprobe` parameter determines how many partitions to check.
+        partition_ids_to_search = self._search_leader(query_vector, nprobe)
+        logger.info(f"Leader search returned partitions: {partition_ids_to_search}")
+
+        if self._use_cache:
+            self._load_with_cache(partition_ids_to_search)
+
         results = {}
-        for id in self._indices.keys():
-            distances, indices = self._search(query_vector, top_n, id, nprobe)
-            results[id] = (distances, self._map_to_original_ids(id, indices))
+        for partition_id in partition_ids_to_search:
+            # Check if the partition's index is loaded in this server.
+            if partition_id in self._indices:
+                logger.info(f"Searching in loaded partition: {partition_id}")
+
+                distances, indices = self._search(
+                    query_vector, top_n, partition_id, nprobe
+                )
+                results[partition_id] = (
+                    distances,
+                    self._map_to_original_ids(partition_id, indices),
+                )
+            else:
+                logger.warning(
+                    f"Partition {partition_id} not loaded in this server, skipping."
+                )
 
         return results
 
@@ -122,12 +226,16 @@ class FaissIndexService:
         return all([idx.is_trained for idx in self._indices.values()])
 
     def total(self) -> int:
-        return sum([idx.ntotal for idx in self._indices.values()])
+        if self._indices.values():
+            return sum([idx.ntotal for idx in self._indices.values()])
+        return 0
 
     def dimensions(self) -> int:
-        all_dims = [idx.d for idx in self._indices.values()]
-        assert len(set(all_dims)) == 1, "All indices must have the same dimension"
-        return all_dims[0]
+        if self._indices.values():
+            all_dims = [idx.d for idx in self._indices.values()]
+            assert len(set(all_dims)) == 1, "All indices must have the same dimension"
+            return all_dims[0]
+        return 0
 
     def get_nprobe(self) -> int:
         return self._nprobe
@@ -172,6 +280,12 @@ class LocalIndexServer:
                 "vectors": self._service.total(),
                 "dimensions": self._service.dimensions(),
             }
+            if self._service._use_cache:
+                health_data["cache"] = {
+                    "hits": self._service._cache_hits,
+                    "misses": self._service._cache_miss,
+                    "evictions": self._service._cache_evictions,
+                }
             return self._success_response(health_data)
 
         # Use 503 Service Unavailable when the service is not ready
@@ -191,17 +305,13 @@ class LocalIndexServer:
             return self._error_response("Missing 'query_vector' in JSON body", 400)
 
         query_vector = data["query_vector"]
+        # number of neighbors to return from each local neighborhood.
         top_n = data.get("top_n", 10)
         nprobe = data.get("nprobe", self._service.get_nprobe())
         is_verbose = data.get("verbose", False)
 
         if "nprobe" in data:
             logger.info(f"Using nprobe override: {nprobe}")
-
-        # Validate vector dimensions
-        if len(query_vector) != self._service.dimensions():
-            msg = f"Query vector has incorrect dimensions. Expected {self._service.dimensions()}, got {len(query_vector)}"
-            return self._error_response(msg, 400)
 
         try:
             results = self._service.search(query_vector, top_n, nprobe)
@@ -267,6 +377,12 @@ def __main__():
         help="The prefix of the index files (e.g., 'local_')",
     )
     parser.add_argument(
+        "--leader_index",
+        type=str,
+        required=True,
+        help="The leader index file, which contains all the centroids",
+    )
+    parser.add_argument(
         "--nprobe",
         type=int,
         default=1,
@@ -284,15 +400,27 @@ def __main__():
         default=5001,
         help="Port to run the server on",
     )
+    parser.add_argument(
+        "--use_cache",
+        action="store_true",
+        default=False,
+        help="Flag to enable the cache, will use lazy loading.",
+    )
     args = parser.parse_args()
 
-    index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{0}}.index"
+    index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{}}.index"
+    leader_index_path = f"{args.index_dir}/{args.leader_index}"
     partitions = parse_partitions(args.partitions)
 
     metadata_db = MetadataDatabase(args.index_dir)
 
     svc = FaissIndexService(
-        index_path_pattern, partitions, nprobe=args.nprobe, metadata_db=metadata_db
+        index_path_pattern,
+        partitions,
+        leader_index_path,
+        nprobe=args.nprobe,
+        metadata_db=metadata_db,
+        use_cache=args.use_cache,
     )
 
     SERVER_HOST = "0.0.0.0"
