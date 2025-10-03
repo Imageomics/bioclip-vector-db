@@ -102,6 +102,7 @@ class FaissIndexService:
         self._metadata_db = metadata_db
 
         if not use_cache:
+            print(neighborhood_ids)
             self._load(neighborhood_ids)
         else:
             self._cache_miss = 0
@@ -278,12 +279,13 @@ class LocalIndexServer:
                 "status": "ready",
                 "vectors": self._service.total(),
                 "dimensions": self._service.dimensions(),
-                "cache": {
+            }
+            if self._service._use_cache:
+                health_data["cache"] = {
                     "hits": self._service._cache_hits,
                     "misses": self._service._cache_miss,
                     "evictions": self._service._cache_evictions,
                 }
-            }
             return self._success_response(health_data)
 
         # Use 503 Service Unavailable when the service is not ready
@@ -310,11 +312,6 @@ class LocalIndexServer:
 
         if "nprobe" in data:
             logger.info(f"Using nprobe override: {nprobe}")
-
-        # Validate vector dimensions
-        if len(query_vector) != self._service.dimensions():
-            msg = f"Query vector has incorrect dimensions. Expected {self._service.dimensions()}, got {len(query_vector)}"
-            return self._error_response(msg, 400)
 
         try:
             results = self._service.search(query_vector, top_n, nprobe)
@@ -411,7 +408,7 @@ def __main__():
     )
     args = parser.parse_args()
 
-    index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{0}.index"
+    index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{}}.index"
     leader_index_path = f"{args.index_dir}/{args.leader_index}"
     partitions = parse_partitions(args.partitions)
 
