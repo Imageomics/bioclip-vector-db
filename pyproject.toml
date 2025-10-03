@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bioclip-vector-db"
+version = "0.1.0"
+description = "Vector database training data retrieval of BioCLIP-embedded nearest neighbors."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "torch",
+    "datasets",
+    "pybioclip",
+    "chromadb",
+    "tqdm",
+    "webdataset",
+    "flask",
+    "Pillow",
+    "faiss-gpu-cu12"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+    "jupyter",
+    "notebook",
+    "ipykernel"
+]
+
+[tool.hatchling.build.targets.wheel]
+packages = ["src/bioclip_vector_db"]
