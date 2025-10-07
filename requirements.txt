@@ -7,3 +7,4 @@ tqdm
 webdataset
 faiss-gpu
 flask
+gunicorn
