@@ -51,8 +51,11 @@ class NearestNeighborClient:
         }
         for url in self._server_urls:
             search_url = f"{url}/search"
-            result = self._post_request(search_url, search_payload)
-            results.append({"server": url, "response": result})
+            try:
+                result = self._post_request(search_url, search_payload)
+                results.append({"server": url, "response": result})
+            except Exception as e:
+                logger.error(f"Search for {url} failed: {e}")
 
         return self._merge_results(results)
 
