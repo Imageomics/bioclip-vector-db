@@ -17,7 +17,8 @@ dependencies = [
     "webdataset",
     "flask",
     "Pillow",
-    "faiss-gpu-cu12"
+    "faiss-gpu-cu12",
+    "gunicorn"
 ]
 
 [project.optional-dependencies]
