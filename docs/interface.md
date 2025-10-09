@@ -240,6 +240,14 @@ For larger result sets (e.g., `top_n=10`):
 
 **Note:** Results are sorted by distance in ascending order, where lower distances indicate higher similarity to the query vector.
 
+## Web Interface
+
+### Front-end mockup
+
+![Web Interface Mockup](mockup.png)
+
+
+### Server Logic
 
 ```
 -> load model aka the embedder, must match with the index
@@ -248,13 +256,5 @@ For larger result sets (e.g., `top_n=10`):
 -> request {vector} -> server
 -> parse result {list} -> {tabular: distance, UUID}
 -> Fetch image {UUID} -> {image} -> {PIL}
-```
-
-``` pipeline
-
-model, preprocess = ...
-
-image_vec = model.inference
-
 ```
 
