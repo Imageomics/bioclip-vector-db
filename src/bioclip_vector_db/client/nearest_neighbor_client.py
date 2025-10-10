@@ -6,7 +6,6 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-
 class NearestNeighborClient:
     """A client for querying multiple LocalIndexServer instances."""
 
@@ -31,8 +30,18 @@ class NearestNeighborClient:
             logger.error(f"Request to {url} failed: {e}")
             return {"status": "error", "error": {"message": str(e)}}
 
+    def _get_request(self, url: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Sends a GET request to a given URL and returns the JSON response."""
+        try:
+            response = requests.get(url, json=params)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request to {url} failed: {e}")
+            return {"status": "error", "error": {"message": str(e)}}
+
     def search(
-        self, query_vector: List[float], top_n: int = 10, nprobe: int = 1
+        self, query_vector: List[float], top_n: int = 10, nprobe: int = 1, fetch_metadata: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Queries all configured servers for the nearest neighbors.
@@ -56,8 +65,39 @@ class NearestNeighborClient:
                 results.append({"server": url, "response": result})
             except Exception as e:
                 logger.error(f"Search for {url} failed: {e}")
+            
+        merged_results = self._merge_results(results)
 
-        return self._merge_results(results)
+        if fetch_metadata:
+            for result in merged_results:
+                image_id = result.get("id")
+                if image_id:
+                    metadata_response = self.get_metadata(image_id)
+                    if metadata_response and metadata_response.get("status") == "success":
+                        result["metadata"] = metadata_response.get("data")
+
+        return merged_results
+
+    def get_metadata(self, image_id: str, server_url: str = None) -> Dict[str, Any]:
+        """
+        Retrieves metadata for a given image_id from one of the servers.
+
+        :param image_id: The image_id to retrieve metadata for.
+        :param server_url: The specific server to query. If None, a random server is chosen.
+        :return: The metadata response from the server.
+        """
+        if server_url and server_url not in self._server_urls:
+            raise ValueError(f"Provided server_url '{server_url}' is not in the configured list of servers.")
+
+        get_payload = {"image_id": image_id}
+        target_server = server_url if server_url else random.choice(self._server_urls)
+        get_url = f"{target_server}/get"
+        
+        try:
+            return self._get_request(get_url, params=get_payload)
+        except Exception as e:
+            logger.error(f"Get metadata for {image_id} from {get_url} failed: {e}")
+            return {"status": "error", "error": {"message": str(e)}}
 
     def _merge_results(self, results):
         """
@@ -93,36 +133,3 @@ class NearestNeighborClient:
                     }
                 )
         return health_statuses
-
-
-if __name__ == "__main__":
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(message)s"
-    )
-
-    # List of server URLs to query
-    SERVER_URLS = [f"http://0.0.0.0:{port}" for port in range(5001, 5004)]
-
-    # Initialize the client
-    client = NearestNeighborClient(SERVER_URLS)
-
-    # 1. Check the health of the servers
-    print("--- Checking server health ---")
-    health_results = client.health()
-    print(json.dumps(health_results, indent=2))
-
-    # 2. Perform a search
-    print("\n--- Performing search ---")
-
-    # Create a dummy query vector.
-    # IMPORTANT: The dimension of this vector must match the dimension of the vectors in the FAISS index.
-    # For BioCLIP models, this is often 512 or 768. We'll use 512 as an example.
-    DUMMY_VECTOR_DIM = 512
-    dummy_query_vector = [random.random() for _ in range(DUMMY_VECTOR_DIM)]
-
-    # Perform the search
-    search_results = client.search(query_vector=dummy_query_vector, top_n=1, nprobe=10)
-
-    # Print the results
-    print(json.dumps(search_results, indent=2))
