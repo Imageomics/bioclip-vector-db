@@ -139,12 +139,34 @@ class MetadataDatabase:
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT metadata FROM id_mapping WHERE partition_id = ? AND faiss_id = ?",
+                "SELECT original_id, metadata FROM id_mapping WHERE partition_id = ? AND faiss_id = ?",
                 (int(partition_id), int(faiss_id)),
             )
             result = cursor.fetchone()
             if result and result[0]:
                 return json.loads(result[0].decode('utf-8'))
+            return None
+        except sqlite3.Error as e:
+            logger.error(f"Error getting metadata: {e}")
+            raise
+
+    def get_metadata(self, original_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the metadata for a given original ID.
+
+        Args:
+            original_id: The original ID
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT original_id, metadata FROM id_mapping WHERE original_id = ?",
+                (str(original_id)),
+            )
+            result = cursor.fetchone()
+            if result and result[0]:
+                return json.loads(result[0])
             return None
         except sqlite3.Error as e:
             logger.error(f"Error getting metadata: {e}")
