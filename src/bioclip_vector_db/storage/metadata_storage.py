@@ -55,6 +55,11 @@ class MetadataDatabase:
                     )
                 """
                 )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_original_id ON id_mapping (original_id)
+                    """
+                )
                 logger.info("SQLITE: Create table successful.")
         except sqlite3.Error as e:
             logger.error(f"Error creating table: {e}")
