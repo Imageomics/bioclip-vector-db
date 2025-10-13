@@ -320,6 +320,10 @@ class LocalIndexServer:
             return self._error_response(
                 "An internal server error occurred during get", 500
             )
+        
+    def handle_get_random(self):
+        """Handler for the /get_random endpoint."""
+        pass
 
     def _handle_merging(self, results):
         all_matches = [

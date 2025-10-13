@@ -70,11 +70,10 @@ class NearestNeighborClient:
 
         if fetch_metadata:
             for result in merged_results:
-                image_id = result.get("id")
-                if image_id:
-                    metadata_response = self.get_metadata(image_id)
-                    if metadata_response and metadata_response.get("status") == "success":
-                        result["metadata"] = metadata_response.get("data")
+                image_id = result.get("id", None)
+                metadata_response = self.get_metadata(image_id, None)
+                if metadata_response and metadata_response.get("status") == "success":
+                    result["metadata"] = metadata_response.get("data")
 
         return merged_results
 
