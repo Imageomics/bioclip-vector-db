@@ -36,6 +36,15 @@ Allocate 1 node on the `nextgen` partition with 60 CPU cores, 1 GPU, and a 2-hou
 salloc -A PAS2136 -p nextgen -N 1 -c 60 -G 1 -t 2:00:00
 ```
 
+Note that GPU is not required. If GPU has a long wait-time, simply start the server and web-interface on the OSC login node, or allocate a compute node without GPU.
+
+```bash
+salloc -A PAS2136 -p nextgen -N 1 -c 16 -t 2:00:00
+```
+
+
+
+
 ### 3. Initialize Environment
 
 Start a tmux session for persistent server management:
