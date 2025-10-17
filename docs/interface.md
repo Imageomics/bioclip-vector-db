@@ -263,10 +263,10 @@ Start the Gradio web interface with default settings:
 ``` bash
 python app_gr.py \
     --db-server-url http://localhost:5001 \
-    --host 0.0.0.0
+    --host 0.0.0.0 \
     --port 7860 \
     --lookup-table-path /fs/scratch/PAS2136/TreeOfLife/lookup_tables/2024-05-01/hdf5/10M \
-    --model hf-hub:imageomics/bioclip \
+    --model hf-hub:imageomics/bioclip 
 
 ```
 
