@@ -1,10 +1,41 @@
 
-import requests
 from PIL import Image
-from typing import Dict, Tuple, Optional, List, Union
+from typing import Dict, Optional, List, Union
 import pyarrow as pa
 import pyarrow.compute as pc
 import io
+import torch
+import h5py
+
+
+def search_hdf5(h5_path, uuids: List[str], group="images") -> Dict[str, Image.Image]:
+    """
+    Search and retrieve images from HDF5 file by UUIDs.
+    
+    Args:
+        h5_path: Path to the HDF5 file
+        uuids: List of UUID strings to search for
+        group: HDF5 group name where images are stored
+    Returns:
+        Dictionary mapping UUIDs to PIL Image objects
+    """
+    images_dict = {}
+
+    with h5py.File(h5_path, "r") as f:
+        imgs = f[group]
+
+        for uuid in uuids:
+            if uuid in imgs:
+                raw_bytes = imgs[uuid][()]  # read uint8 array
+                try:
+                    img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+                    images_dict[uuid] = img
+                except Exception as e:
+                    print(f"Failed to parse image bytes for UUID {uuid}: {e}")
+                    continue              
+
+    return images_dict
+    
 
 def parse_uploaded_image(uploaded_file: Union[bytes, io.BytesIO, str]) -> Optional[Image.Image]:
     """
@@ -34,6 +65,7 @@ def parse_uploaded_image(uploaded_file: Union[bytes, io.BytesIO, str]) -> Option
         print(f"Failed to parse uploaded image: {e}")
         return None
 
+@torch.no_grad()
 def embed_image(image: Image.Image, model, preprocess) -> List[float]:
     """
     Placeholder function to embed an image into a vector.
@@ -45,94 +77,52 @@ def embed_image(image: Image.Image, model, preprocess) -> List[float]:
     Returns:
         List of floats representing the image embedding
     """
-    # Dummy implementation - replace with actual model inference
-    return [0.0] * 512  # Example: 512-dimensional zero vector
+    
+    image_preprocessed = preprocess(image).unsqueeze(0)
+    image_features = model.encode_image(image_preprocessed)
+    image_features /= image_features.norm(dim=-1, keepdim=True)
+    
+    return image_features.flatten().tolist()
 
-def retrieve_images(uuid_list: List[str], method: str, lookup_tbl: pa.Table) -> Tuple[Dict[str, Image.Image], Dict[str, str]]:
-    """
-    Retrieve images by UUID list with fallback handling.
-    
-    Args:
-        uuid_list: List of unique identifiers for the images
-        method: "remote" or "local"
-        lookup_tbl: Arrow table with columns ['uuid', 'local_path', 'uri'] or similar
-        
-    Returns:
-        Tuple of (Dict of {uuid: PIL Image}, Dict of {uuid: failure_type})
-    """
-    # lookup tbl: Arrow table that can be queried
-    # If lookup_tbl is None, raise error
-    if lookup_tbl is None:
-        raise ValueError("lookup_tbl cannot be None")
-    
-    # Initialize result dictionaries
+def retrieve_images_hdf5(uuid_list: List[str], lookup_tbl: pa.Table):
     images_dict = {}
     failed_dict = {}
     
-    # First obtain the subset UUID -> (local_path, uri) table
-    try:
-        # Filter table to get only rows matching our UUID list
-        mask = pc.is_in(lookup_tbl['uuid'], pa.array(uuid_list))
-        filtered_table = lookup_tbl.filter(mask)
-        
-        # Convert to dict for efficient lookup: {uuid: (local_path, uri)}
-        uuid_mappings = {}
-        if len(filtered_table) > 0:
-            table_dict = filtered_table.to_pydict()
-            for i in range(len(table_dict['uuid'])):
-                uuid = table_dict['uuid'][i]
-                local_path = table_dict.get('local_path', [None] * len(table_dict['uuid']))[i]
-                uri = table_dict.get('uri', [None] * len(table_dict['uuid']))[i]
-                uuid_mappings[uuid] = (local_path, uri)
-        
-        # Check for missing UUIDs
-        for uuid in uuid_list:
-            if uuid not in uuid_mappings:
-                failed_dict[uuid] = "not_found_in_lookup"
-                
-    except Exception as e:
-        failed_dict.update({uuid: f"query_error: {str(e)}" for uuid in uuid_list})
+    mask = pc.is_in(lookup_tbl['uuid'], pa.array(uuid_list))
+    matched_tbl = lookup_tbl.filter(mask)
+    
+    matched_uuids = set(matched_tbl["uuid"].to_pylist())
+    unmatched_uuids = list(set(uuid_list) - matched_uuids)
+    matched_uuids = list(matched_uuids)
+    
+    for uuid in unmatched_uuids:
+        failed_dict[uuid] = "not_found_in_lookup"
+    
+    if len(matched_uuids) == 0:
         return images_dict, failed_dict
     
-    # Then perform I/O or request for each valid UUID
-    for uuid, (local_path, uri) in uuid_mappings.items():
-        if method == "remote":
-            # Fetch image from URL Object Storage
-            if uri:
-                try:
-                    response = requests.get(uri, timeout=10)
-                    response.raise_for_status()
-                    image = Image.open(requests.get(uri, stream=True).raw)
-                    images_dict[uuid] = image
-                    continue
-                except Exception:
-                    pass  # Fall through to local attempt
-            
-            # If failed, try local
-            if local_path:
-                try:
-                    image = Image.open(local_path)
-                    images_dict[uuid] = image
-                    continue
-                except Exception:
-                    pass
-            
-            # If both failed
-            failed_dict[uuid] = "remote_and_local_failed"
-                    
-        elif method == "local":
-            # Load images from local
-            if local_path:
-                try:
-                    image = Image.open(local_path)
-                    images_dict[uuid] = image
-                except Exception:
-                    failed_dict[uuid] = "local_failed"
-            else:
-                failed_dict[uuid] = "no_local_path"
-        else:
-            raise ValueError(f"Method {method} not supported.")
     
-    return images_dict, failed_dict
+    h5_paths = sorted(set(matched_tbl["file_path"].to_pylist()))
+    # Build {h5_path: [uuids,...]} so each file is opened once
+    uuids_by_file = {}
+    uuids_col = matched_tbl["uuid"].to_pylist()
+    paths_col  = matched_tbl["file_path"].to_pylist()
+    for u, p in zip(uuids_col, paths_col):
+        uuids_by_file.setdefault(p, []).append(u)
+    
+    for h5_path in h5_paths:
+        try:
+            imgs_dict = search_hdf5(h5_path, uuids_by_file[h5_path], group="images")
+            images_dict.update(imgs_dict)
+            
+            # Mark any missing UUIDs as failed
+            for uuid in uuids_by_file[h5_path]:
+                if uuid not in imgs_dict:
+                    failed_dict[uuid] = "hdf5_image_not_found"
+        except Exception as e:
+            # If file open fails, mark all its UUIDs as failed
+            for uuid in uuids_by_file[h5_path]:
+                failed_dict[uuid] = f"hdf5_open_failed: {str(e)}"
 
+    return images_dict, failed_dict
 

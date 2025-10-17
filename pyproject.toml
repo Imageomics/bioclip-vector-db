@@ -17,7 +17,10 @@ dependencies = [
     "webdataset",
     "flask",
     "Pillow",
-    "faiss-gpu-cu12"
+    "faiss-gpu-cu12",
+    "pyarrow",
+    "h5py",
+    "gradio"
 ]
 
 [project.optional-dependencies]

@@ -12,6 +12,7 @@ This guide provides step-by-step instructions for deploying and using the BioCLI
    - [Health Check](#health-check)
    - [Vector Search](#vector-search)
 5. [Example Responses](#example-responses)
+6. [Web Interface](#web-interface)
 
 ## Prerequisites
 
@@ -246,15 +247,29 @@ For larger result sets (e.g., `top_n=10`):
 
 ![Web Interface Mockup](mockup.png)
 
+### Starting the Web Interface
 
-### Server Logic
+Start the Gradio web interface with default settings:
+
+``` bash
+python app_gr.py \
+    --db-server-url http://localhost:5001 \
+    --host 0.0.0.0
+    --port 7860 \
+    --lookup-table-path /fs/scratch/PAS2136/TreeOfLife/lookup_tables/2024-05-01/hdf5/10M \
+    --model hf-hub:imageomics/bioclip \
 
 ```
--> load model aka the embedder, must match with the index
--> I/O Preprocessing {image} -> {PIL}
--> embedding {PIL} -> {vector}
--> request {vector} -> server
--> parse result {list} -> {tabular: distance, UUID}
--> Fetch image {UUID} -> {image} -> {PIL}
-```
 
+**Parameters:**
+- `--db-server-url`: Vector database server URL (default: http://localhost:5001)
+- `--host`: Host address for the Gradio server (default: 0.0.0.0)
+- `--port`: Gradio app server port (default: 7860)
+- `--lookup-table-path`: Path to the lookup table directory
+- `--model`: BioCLIP model name (default: hf-hub:imageomics/bioclip)
+
+
+**Quick Start (uses all defaults):**
+``` bash
+python app_gr.py
+```
