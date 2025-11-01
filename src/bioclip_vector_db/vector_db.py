@@ -254,7 +254,7 @@ def main():
 
     parser.add_argument(
         "--bioclip_model",
-        type=SystemError,
+        type=str,
         choices=[BIOCLIP_V1_MODEL_STR, BIOCLIP_V2_MODEL_STR],
         required=False,
         default=BIOCLIP_V1_MODEL_STR,
