@@ -45,11 +45,11 @@ class MetadataDatabase:
             with conn:
                 conn.execute(
                     """
-                    CREATE TABLE IF NOT EXISTS id_mapping (
+                    CREATE TABLE IF NOT EXISTS metadata (
                         partition_id INTEGER NOT NULL,
                         faiss_id INTEGER NOT NULL,
                         original_id TEXT NOT NULL,
-                        metadata BLOB,
+                        metadata TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         PRIMARY KEY (partition_id, faiss_id)
                     )
@@ -61,7 +61,7 @@ class MetadataDatabase:
             raise
 
         cursor = conn.cursor()
-        cursor.execute("SELECT count(*) FROM id_mapping")
+        cursor.execute("SELECT count(*) FROM metadata")
         result = cursor.fetchone()
         logger.info(f"Total number of records: {result[0]}")
 
@@ -82,12 +82,12 @@ class MetadataDatabase:
             metadata: Optional dictionary of metadata to store as a JSON string.
         """
         conn = self._get_connection()
-        metadata_blob = json.dumps(metadata).encode("utf-8") if metadata else None
+        metadata_json = json.dumps(metadata) if metadata else None
         try:
             with conn:
                 conn.execute(
-                    "INSERT INTO id_mapping (partition_id, faiss_id, original_id, metadata) VALUES (?, ?, ?, ?)",
-                    (int(partition_id), int(faiss_id), original_id, metadata_blob),
+                    "INSERT INTO metadata (partition_id, faiss_id, original_id, metadata) VALUES (?, ?, ?, ?)",
+                    (int(partition_id), int(faiss_id), original_id, metadata_json),
                 )
                 logger.debug(
                     f"Added mapping: partition_id={partition_id}, faiss_id={faiss_id}, original_id={original_id}"
@@ -115,7 +115,7 @@ class MetadataDatabase:
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT original_id FROM id_mapping WHERE partition_id = ? AND faiss_id = ?",
+                "SELECT original_id FROM metadata WHERE partition_id = ? AND faiss_id = ?",
                 (int(partition_id), int(faiss_id)),
             )
             result = cursor.fetchone()
@@ -139,12 +139,12 @@ class MetadataDatabase:
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT original_id, metadata FROM id_mapping WHERE partition_id = ? AND faiss_id = ?",
+                "SELECT original_id, metadata FROM metadata WHERE partition_id = ? AND faiss_id = ?",
                 (int(partition_id), int(faiss_id)),
             )
             result = cursor.fetchone()
-            if result and result[0]:
-                return json.loads(result[0].decode('utf-8'))
+            if result and result[1]:
+                return json.loads(result[1])
             return None
         except sqlite3.Error as e:
             logger.error(f"Error getting metadata: {e}")
@@ -161,12 +161,12 @@ class MetadataDatabase:
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT original_id, metadata FROM id_mapping WHERE original_id = ?",
+                "SELECT original_id, metadata FROM metadata WHERE original_id = ?",
                 (str(original_id)),
             )
             result = cursor.fetchone()
-            if result and result[0]:
-                return json.loads(result[0])
+            if result and result[1]:
+                return json.loads(result[1])
             return None
         except sqlite3.Error as e:
             logger.error(f"Error getting metadata: {e}")
@@ -190,7 +190,7 @@ class MetadataDatabase:
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT faiss_id FROM id_mapping WHERE original_id = ?", (original_id,)
+                "SELECT faiss_id FROM metadata WHERE original_id = ?", (original_id,)
             )
             result = cursor.fetchone()
             return result[0] if result else None
@@ -209,7 +209,7 @@ class MetadataDatabase:
         conn = self._get_connection()
         try:
             with conn:
-                conn.execute("DROP TABLE IF EXISTS id_mapping")
+                conn.execute("DROP TABLE IF EXISTS metadata")
                 logger.info("SQLITE: Reset table successful.")
         except sqlite3.Error as e:
             logger.error(f"Error resetting table: {e}")
