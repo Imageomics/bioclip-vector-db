@@ -36,12 +36,14 @@ class AppConfig:
         server_url: str,
         lookup_table_path: str,
         model_name: str,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        num_workers: int = 1
     ):
         self.server_url = server_url
         self.lookup_table_path = lookup_table_path
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.num_workers = num_workers
         self.current_results: List[Image.Image] = []
 
 
@@ -59,6 +61,7 @@ class BioCLIPSearchApp:
         self.preprocess = None
         self.client = None
         self.lookup_tbl = None
+        self.arrow_threads = 8           # Number of threads for PyArrow
         self._initialize()
     
     def _initialize(self):
@@ -74,7 +77,7 @@ class BioCLIPSearchApp:
         
         logger.info(f"Loading lookup table from: {self.config.lookup_table_path}")
         dataset = ds.dataset(self.config.lookup_table_path, format="parquet")
-        self.lookup_tbl = dataset.to_table(use_threads=True, batch_readahead=4)
+        self.lookup_tbl = dataset.to_table(use_threads=True, batch_readahead=self.arrow_threads)
         
         logger.info("Initialization complete")
     
@@ -114,7 +117,8 @@ class BioCLIPSearchApp:
             uuid_list = [item["id"] for item in search_results]
             images_dict, failed_dict = retrieve_images_hdf5(
                 uuid_list,
-                lookup_tbl=self.lookup_tbl
+                lookup_tbl=self.lookup_tbl,
+                num_workers=self.config.num_workers
             )
             
             if failed_dict:
@@ -198,11 +202,6 @@ class BioCLIPSearchApp:
                 inputs=[img, top_n, nprobe],
                 outputs=[gallery]
             )
-            img.change(
-                self.search,
-                inputs=[img, top_n, nprobe],
-                outputs=[gallery]
-            )
             export_btn.click(
                 self.export_results,
                 inputs=[],
@@ -242,7 +241,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--lookup-table-path",
         type=str,
-        default="/fs/scratch/PAS2136/TreeOfLife/lookup_tables/2024-05-01/hdf5/10M",
+        default="/fs/scratch/PAS2136/TreeOfLife/image_lookup/2024-05-01/hdf5/10M/lookup_tbl",
         help="Path to the lookup table directory"
     )
     parser.add_argument(
@@ -251,7 +250,12 @@ def parse_arguments() -> argparse.Namespace:
         default="hf-hub:imageomics/bioclip",
         help="Model to embed the image (default: hf-hub:imageomics/bioclip)"
     )
-
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Number of worker processes for HDF5 image retrieval (default: 1, no multiprocessing)"
+    )
     
     return parser.parse_args()
 
@@ -264,7 +268,8 @@ def main():
     config = AppConfig(
         server_url=args.db_server_url,
         lookup_table_path=args.lookup_table_path,
-        model_name=args.model
+        model_name=args.model,
+        num_workers=args.num_workers
     )
     
     # Initialize and launch app

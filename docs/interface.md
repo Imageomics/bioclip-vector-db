@@ -72,6 +72,20 @@ python -m src.bioclip_vector_db.query.neighborhood_server \
     --use_cache
 ```
 
+Running with Gunicorn
+
+```bash
+export INDEX_DIR=/fs/scratch/PAS2136/smenon/tol_vector_faiss_partitions
+export INDEX_FILE_PREFIX=local_
+export LEADER_INDEX=leader.index
+export PARTITIONS="1-999"
+export PORT=5001
+export USE_CACHE=true
+
+gunicorn --workers ${WORKERS:-4} --bind 0.0.0.0:${PORT} --chdir src bioclip_vector_db.query.wsgi:app
+```
+
+
 ## Server Management
 
 ### Detach from tmux Session
@@ -88,6 +102,13 @@ To reconnect to the server session:
 
 ```bash
 tmux attach -t vector_db_server
+```
+
+### Kill tmux Session
+
+To kill the tmux session
+```bash 
+tmux kill-session -t vector_db_server
 ```
 
 ## API Usage
@@ -260,14 +281,14 @@ For larger result sets (e.g., `top_n=10`):
 
 Start the Gradio web interface with default settings:
 
-``` bash
+```bash
 python app_gr.py \
     --db-server-url http://localhost:5001 \
     --host 0.0.0.0 \
     --port 7860 \
-    --lookup-table-path /fs/scratch/PAS2136/TreeOfLife/lookup_tables/2024-05-01/hdf5/10M \
-    --model hf-hub:imageomics/bioclip 
-
+    --lookup-table-path /fs/scratch/PAS2136/TreeOfLife/image_lookup/2024-05-01/hdf5/10M/lookup_tbl \
+    --model hf-hub:imageomics/bioclip \
+    --num-workers 4
 ```
 
 **Parameters:**
@@ -276,9 +297,17 @@ python app_gr.py \
 - `--port`: Gradio app server port (default: 7860)
 - `--lookup-table-path`: Path to the lookup table directory
 - `--model`: BioCLIP model name (default: hf-hub:imageomics/bioclip)
-
+- `--num-workers`: Number of worker processes for parallel HDF5 image retrieval (default: 1)
+  - Set to 1 for sequential processing (no multiprocessing)
+  - Set to 4 or more for faster image retrieval when dealing with many HDF5 files
+  - Recommended: Use 4-8 workers on multi-core systems for optimal performance
 
 **Quick Start (uses all defaults):**
-``` bash
+```bash
 python app_gr.py
+```
+
+**Example with multiprocessing for faster image retrieval:**
+```bash
+python app_gr.py --num-workers 4
 ```
