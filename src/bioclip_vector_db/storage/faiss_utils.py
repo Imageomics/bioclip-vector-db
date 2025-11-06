@@ -96,7 +96,7 @@ class IndexPartitionWriter:
             if len(self._partition_to_embedding_map[partition_id]) >= self._batch_size:
                 self._write_partition_to_file(partition_id)
 
-    def add_embedding(self, original_id: str, embedding: np.ndarray):
+    def add_embedding(self, original_id: str, embedding: np.ndarray, metadata: dict = None):
         """Adds a single embedding vector to the appropriate partition buffer.
 
         Args:
@@ -111,7 +111,7 @@ class IndexPartitionWriter:
         partition_id = int(partition_ids[0][0])
 
         faiss_id = self._partition_faiss_ids[partition_id]
-        self._metadata_db.add_mapping(partition_id, faiss_id, original_id)
+        self._metadata_db.add_mapping(partition_id, faiss_id, original_id, metadata)
         self._partition_faiss_ids[partition_id] += 1
 
         self._partition_to_embedding_map[partition_id].append(embedding)

@@ -26,7 +26,8 @@ logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
 
 _LOCAL_DATASET_KEYS = ("__key__", "jpg", "taxontag_com.txt")
-
+BIOCLIP_V1_MODEL_STR = "hf-hub:imageomics/bioclip"
+BIOCLIP_V2_MODEL_STR = "hf-hub:imageomics/bioclip-2"
 
 def _get_device() -> torch.device:
     if torch.cuda.is_available():
@@ -48,6 +49,7 @@ class BioclipVectorDatabase:
         split: str,
         local_dataset: str = None,
         batch_size: int = 10,
+        model: str = BIOCLIP_V1_MODEL_STR,
     ):
         self._dataset_type = dataset_type
         self._classifier = TreeOfLifeClassifier(device=_get_device())
@@ -250,17 +252,29 @@ def main():
         help="Storage to be used for creating the vector database.",
     )
 
+    parser.add_argument(
+        "--bioclip_model",
+        type=str,
+        choices=[BIOCLIP_V1_MODEL_STR, BIOCLIP_V2_MODEL_STR],
+        required=False,
+        default=BIOCLIP_V1_MODEL_STR,
+        help="Dataset to use for creating the vector database",
+    )
+
     args = parser.parse_args()
     dataset = args.dataset
     output_dir = args.output_dir
     split = args.split
     local_dataset = args.local_dataset
+    model = args.bioclip_model
+
 
     logger.info(f"Creating database for dataset: {dataset} with split: {split}")
     logger.info(f"Creating database for dataset: {dataset.value}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Resetting the database: {args.reset}")
     logger.info(f"Using storage: {args.storage}")
+    logger.info(f"Using model: {model}")
     logging.info(f"Approximate dataset size: {args.dataset_size}")
 
     # Currently only CHROMA backend is supported so hardcoding is fine.
@@ -281,6 +295,7 @@ def main():
         split=split,
         local_dataset=local_dataset,
         batch_size=args.batch_size,
+        model=model,
     )
     vdb.load_database()
 

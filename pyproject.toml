@@ -20,7 +20,8 @@ dependencies = [
     "faiss-gpu-cu12",
     "pyarrow",
     "h5py",
-    "gradio"
+    "gradio",
+    "gunicorn"
 ]
 
 [project.optional-dependencies]

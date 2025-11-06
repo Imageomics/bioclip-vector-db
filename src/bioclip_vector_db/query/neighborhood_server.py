@@ -73,7 +73,7 @@ class FaissIndexService:
             nprobe (int, optional): The number of partitions to search. Defaults to 1.
             metadata_db (MetadataDatabase, optional): An instance of MetadataDatabase.
                 Defaults to None.
-            use_cache (bool, optional): Whether to use caching. Defaults to False. If enabled, 
+            use_cache (bool, optional): Whether to use caching. Defaults to False. If enabled,
                 lazy loading of the local neighborhoods will happen.
         """
         self._index_path_pattern = index_path_pattern
@@ -82,8 +82,9 @@ class FaissIndexService:
         self._use_cache = use_cache
 
         if self._use_cache and self._nprobe > MAX_CACHE_SIZE:
-            raise ValueError(f"nprobe cannot be greater than MAX_CACHE_SIZE: {MAX_CACHE_SIZE}")
-            
+            raise ValueError(
+                f"nprobe cannot be greater than MAX_CACHE_SIZE: {MAX_CACHE_SIZE}"
+            )
 
         if leader_index_path is None or not os.path.exists(leader_index_path):
             logger.error(f"Loading leader index from: {leader_index_path}")
@@ -139,9 +140,11 @@ class FaissIndexService:
             if neighborhood_id in self._indices:
                 self._cache_hits += 1
                 self._indices.move_to_end(neighborhood_id)
-                logger.info(f"Neighborhood {neighborhood_id} already in cache. Moved to most recently used.")
+                logger.info(
+                    f"Neighborhood {neighborhood_id} already in cache. Moved to most recently used."
+                )
                 continue
-            
+
             self._cache_miss += 1
             if len(self._indices) >= MAX_CACHE_SIZE:
                 self._cache_evictions += 1
@@ -362,6 +365,34 @@ def parse_partitions(partition_str: str) -> List[int]:
     return sorted(list(partitions))
 
 
+def create_app(
+    index_dir: str,
+    index_file_prefix: str,
+    leader_index: str,
+    nprobe: int,
+    partitions_str: str,
+    use_cache: bool,
+):
+    """Creates and configures the Flask application."""
+    index_path_pattern = f"{index_dir}/{index_file_prefix}{{}}.index"
+    leader_index_path = f"{index_dir}/{leader_index}"
+    partitions = parse_partitions(partitions_str)
+
+    metadata_db = MetadataDatabase(index_dir)
+
+    svc = FaissIndexService(
+        index_path_pattern,
+        partitions,
+        leader_index_path,
+        nprobe=nprobe,
+        metadata_db=metadata_db,
+        use_cache=use_cache,
+    )
+
+    server = LocalIndexServer(service=svc)
+    return server._app
+
+
 def __main__():
     parser = argparse.ArgumentParser(description="FAISS Neighborhood Server")
     parser.add_argument(
@@ -408,30 +439,20 @@ def __main__():
     )
     args = parser.parse_args()
 
-    index_path_pattern = f"{args.index_dir}/{args.index_file_prefix}{{}}.index"
-    leader_index_path = f"{args.index_dir}/{args.leader_index}"
-    partitions = parse_partitions(args.partitions)
-
-    metadata_db = MetadataDatabase(args.index_dir)
-
-    svc = FaissIndexService(
-        index_path_pattern,
-        partitions,
-        leader_index_path,
+    app = create_app(
+        index_dir=args.index_dir,
+        index_file_prefix=args.index_file_prefix,
+        leader_index=args.leader_index,
         nprobe=args.nprobe,
-        metadata_db=metadata_db,
+        partitions_str=args.partitions,
         use_cache=args.use_cache,
     )
 
     SERVER_HOST = "0.0.0.0"
     SERVER_PORT = args.port
 
-    # 2. Initialize the server with the index service
-    server = LocalIndexServer(service=svc)
-
-    # 3. Run the server
     print(f"Starting server at http://{SERVER_HOST}:{SERVER_PORT}")
-    server.run(host=SERVER_HOST, port=SERVER_PORT)
+    app.run(host=SERVER_HOST, port=SERVER_PORT)
 
 
 if __name__ == "__main__":
