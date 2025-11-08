@@ -186,8 +186,7 @@ class FaissIndexService:
 
     @timer
     def search(
-        self, query_vector: list, top_n: int, nprobe: int = 1
-    ) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
+        self, query_vector: list, top_n: int, nprobe: int = 1) -> Dict[int, tuple[np.ndarray, np.ndarray]]:
         """
         Performs a search on the loaded FAISS index.
         This method first queries the leader index to identify the most relevant partitions,
@@ -243,6 +242,10 @@ class FaissIndexService:
     def get_nprobe(self) -> int:
         return self._nprobe
 
+    @timer
+    def get(self, original_id: str):
+        return self._metadata_db.get_metadata(original_id)
+
 
 class LocalIndexServer:
     """A Flask server class to handle search and health check requests."""
@@ -258,6 +261,7 @@ class LocalIndexServer:
             "/search", "search", self.handle_search, methods=["POST"]
         )
         self._app.add_url_rule("/health", "health", self.handle_health, methods=["GET"])
+        self._app.add_url_rule("/get", "get", self.handle_get, methods=["GET"])
 
     def _success_response(self, data, status_code=200):
         """Generates a structured success JSON response."""
@@ -293,6 +297,33 @@ class LocalIndexServer:
 
         # Use 503 Service Unavailable when the service is not ready
         return self._error_response("Index not loaded or trained", 503)
+
+    def handle_get(self):
+        """
+        Handler for the /get endpoint.
+        Retrieves metadata for a given image_id.
+        """
+        data = request.get_json()
+        if not data or "image_id" not in data:
+            return self._error_response("Missing 'image_id' in request parameters", 400)
+        image_id = data["image_id"]
+        try:
+            metadata = self._service.get(image_id)
+            if metadata:
+                return self._success_response(metadata)
+            else:
+                return self._error_response(
+                    f"Metadata not found for image_id: {image_id}", 404
+                )
+        except Exception as e:
+            logger.error(f"An error occurred during get: {e}", exc_info=True)
+            return self._error_response(
+                "An internal server error occurred during get", 500
+            )
+        
+    def handle_get_random(self):
+        """Handler for the /get_random endpoint."""
+        pass
 
     def _handle_merging(self, results):
         all_matches = [

@@ -69,6 +69,7 @@ export LEADER_INDEX=leader.index
 export PARTITIONS="1,2,5-10"
 export NPROBE=10
 export PORT=5001
+export USE_CACHE=1
 
 gunicorn --workers ${WORKERS:-4} --bind 0.0.0.0:${PORT} --chdir src bioclip_vector_db.query.wsgi:app
 ```
