@@ -37,13 +37,15 @@ class AppConfig:
         lookup_table_path: str,
         model_name: str,
         device: Optional[str] = None,
-        num_workers: int = 1
+        num_workers: int = 1,
+        enable_export: bool = True
     ):
         self.server_url = server_url
         self.lookup_table_path = lookup_table_path
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.num_workers = num_workers
+        self.enable_export = enable_export
         self.current_results: List[Image.Image] = []
 
 
@@ -183,10 +185,25 @@ class BioCLIPSearchApp:
             with gr.Row():
                 with gr.Column(scale=1, min_width=280):
                     img = gr.Image(type="pil", label="Upload Image", height=360)
-                    top_n = gr.Slider(1, 40, value=8, step=1, label="Top N")
-                    nprobe = gr.Slider(1, 128, value=16, step=1, label="Nprobe")
+                    
+                    nprobe = gr.Slider(
+                        1, 128, value=16, step=1, 
+                        label="Search Depth (nprobe)",
+                        info="Number of cluster partitions to search.\nHigher values = more accurate but slower."
+                    )
+                    
+                    top_n = gr.Slider(
+                        1, 40, value=8, step=1, 
+                        label="Top N Results per Partition",
+                        info="Number of neighbors returned from each partition.\nTotal results ≈ nprobe × top_n."
+                    )
+        
                     run = gr.Button("Run", variant="primary")
-                    export_btn = gr.Button("Export Results", variant="secondary")
+                    export_btn = gr.Button(
+                        "Export Results", 
+                        variant="secondary",
+                        visible=self.config.enable_export
+                    )
                     
                 with gr.Column(scale=2):
                     gallery = gr.Gallery(
@@ -194,7 +211,10 @@ class BioCLIPSearchApp:
                         columns=5,
                         height=640
                     )
-                    download_file = gr.File(label="Export", visible=True)
+                    download_file = gr.File(
+                        label="Export", 
+                        visible=self.config.enable_export
+                    )
             
             # Event handlers
             run.click(
@@ -202,11 +222,13 @@ class BioCLIPSearchApp:
                 inputs=[img, top_n, nprobe],
                 outputs=[gallery]
             )
-            export_btn.click(
-                self.export_results,
-                inputs=[],
-                outputs=[download_file]
-            )
+            
+            if self.config.enable_export:
+                export_btn.click(
+                    self.export_results,
+                    inputs=[],
+                    outputs=[download_file]
+                )
         
         return demo
 
@@ -256,6 +278,11 @@ def parse_arguments() -> argparse.Namespace:
         default=1,
         help="Number of worker processes for HDF5 image retrieval (default: 1, no multiprocessing)"
     )
+    parser.add_argument(
+        "--disable-export",
+        action="store_true",
+        help="Disable export functionality (hides export button and download file)"
+    )
     
     return parser.parse_args()
 
@@ -269,7 +296,8 @@ def main():
         server_url=args.db_server_url,
         lookup_table_path=args.lookup_table_path,
         model_name=args.model,
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        enable_export=not args.disable_export
     )
     
     # Initialize and launch app

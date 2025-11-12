@@ -301,6 +301,7 @@ python app_gr.py \
   - Set to 1 for sequential processing (no multiprocessing)
   - Set to 4 or more for faster image retrieval when dealing with many HDF5 files
   - Recommended: Use 4-8 workers on multi-core systems for optimal performance
+- `--disable-export`: Disable export functionality (hides export button and download file)
 
 **Quick Start (uses all defaults):**
 ```bash
@@ -310,4 +311,16 @@ python app_gr.py
 **Example with multiprocessing for faster image retrieval:**
 ```bash
 python app_gr.py --num-workers 4
+```
+
+**Demo mode (export disabled):**
+```bash
+python app_gr.py \
+    --db-server-url http://localhost:5001 \
+    --host 0.0.0.0 \
+    --port 7860 \
+    --lookup-table-path /fs/scratch/PAS2136/TreeOfLife/image_lookup/2024-05-01/hdf5/10M/lookup_tbl \
+    --model hf-hub:imageomics/bioclip \
+    --num-workers 4 \
+    --disable-export
 ```
