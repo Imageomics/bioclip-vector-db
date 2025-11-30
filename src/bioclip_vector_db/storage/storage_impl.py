@@ -150,14 +150,14 @@ class FaissIvf(StorageInterface):
             self._train_ids.extend(ids)
             self._train_embeddings.extend(embeddings)
             self._train_metadatas.extend(metadatas)
+            logger.info(f"Number of training records in memory: {len(self._train_ids)}")
         elif not self._index.is_trained:
             self._train_index()
         else:
             for id, embedding, metadata in zip(ids, embeddings, metadatas):
                 self._add_embedding_to_index(id, embedding, metadata)
+            logger.info(json.dumps(self._writer._get_health(), indent=2))
         
-        logger.info(json.dumps(self._writer._get_health(), indent=2))
-
     def query(self, id: str):
         pass
 
