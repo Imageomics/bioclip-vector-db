@@ -158,8 +158,8 @@ class FaissIvf(StorageInterface):
         else:
             logger.info(f"Skipped training - adding {len(ids)} records to index.")
             for id, embedding, metadata in zip(ids, embeddings, metadatas):
-                self._add_embedding_to_index(id, embedding, metadata)
-            # logger.info(json.dumps(self._writer._get_health(), indent=2))
+                self._add_embedding_to_index(id, embedding, {})
+            logger.info(json.dumps(self._writer._get_health(), indent=2))
         
     def query(self, id: str):
         pass
