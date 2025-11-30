@@ -98,8 +98,9 @@ class IndexPartitionWriter:
         for partition_id in list(self._partition_to_embedding_map.keys()):
             if len(self._partition_to_embedding_map[partition_id]) >= self._batch_size:
                 self._write_partition_to_file(partition_id)
-        self._metadata_db.batch_add_mapping(self._metadatas_batch)
-        self._metadatas_batch.clear()
+        if len(self._metadatas_batch) >= self._batch_size:
+            self._metadata_db.batch_add_mapping(self._metadatas_batch)
+            self._metadatas_batch.clear()
 
     def add_embedding(
         self, original_id: str, embedding: np.ndarray, metadata: dict = None
