@@ -46,6 +46,7 @@ class IndexPartitionWriter:
         self._local_index_file = "local_{idx}.index"
         self._cleanup_temp_files = cleanup_temp_files
         self._partition_faiss_ids = defaultdict(int)
+        self._metadatas_batch = []
 
         # Ensure the output directory exists
         os.makedirs(self._collection_dir, exist_ok=True)
@@ -97,6 +98,8 @@ class IndexPartitionWriter:
         for partition_id in list(self._partition_to_embedding_map.keys()):
             if len(self._partition_to_embedding_map[partition_id]) >= self._batch_size:
                 self._write_partition_to_file(partition_id)
+        self._metadata_db.batch_add_mapping(self._metadatas_batch)
+        self._metadatas_batch.clear()
 
     def add_embedding(
         self, original_id: str, embedding: np.ndarray, metadata: dict = None
@@ -115,10 +118,16 @@ class IndexPartitionWriter:
         partition_id = int(partition_ids[0][0])
 
         faiss_id = self._partition_faiss_ids[partition_id]
-        self._metadata_db.add_mapping(partition_id, faiss_id, original_id, metadata)
+        # self._metadata_db.add_mapping(partition_id, faiss_id, original_id, metadata)
         self._partition_faiss_ids[partition_id] += 1
 
         self._partition_to_embedding_map[partition_id].append(embedding)
+        self._metadatas_batch.append({
+            "original_id": original_id,
+            "partition_id": partition_id,
+            "faiss_id": faiss_id,
+            "metadata": metadata,
+        })
         self._maybe_flush_buffers()
 
     def _flush(self):
