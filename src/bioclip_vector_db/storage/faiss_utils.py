@@ -141,9 +141,7 @@ class IndexPartitionWriter:
             "num_partitions": len(num_records_per_partition),
             "num_records_in_memory": sum(num_records_per_partition),
             "avg_num_records_per_partition": sum(num_records_per_partition)
-            // (len(num_records_per_partition) + 1),
-            "max_num_records_per_partition": max(num_records_per_partition),
-            "min_num_records_per_partition": min(num_records_per_partition),
+            // (len(num_records_per_partition) + 1)
         }
 
     def _add_to_index_partitions(self):
