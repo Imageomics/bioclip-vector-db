@@ -72,12 +72,14 @@ class BioclipVectorDatabase:
         model: str = BIOCLIP_V1_MODEL_STR,
     ):
         self._dataset_type = dataset_type
-        self._classifier = TreeOfLifeClassifier(device=_get_device(), model_str=model)
         self._dataset = None
         self._storage = storage
         self._use_local_dataset = local_dataset is not None
         self._use_local_embeddings = local_embeddings is not None
         self._batch_size = batch_size
+
+        if not self._use_local_embeddings:
+            self._classifier = TreeOfLifeClassifier(device=_get_device(), model_str=model)
 
         self._prepare_dataset(
             split=split, local_dataset=local_dataset, local_embeddings=local_embeddings
@@ -270,14 +272,14 @@ def main():
         "--local_dataset",
         type=str,
         default=None,
-        help="Path to the local dataset, if unspecified will attempt download form Hugging Face.",
+        help="Path to the local dataset, if unspecified will attempt download form HuggingFace.",
     )
 
     parser.add_argument(
         "--local_embeddings",
         type=str,
         default=None,
-        help="Path to the pre-calculated embeddings, if specified will ignore local_datasets",
+        help="Path to the pre-calculated embeddings, cannot be used together with local_datasets.",
     )
 
     parser.add_argument(
