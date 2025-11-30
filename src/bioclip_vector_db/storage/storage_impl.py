@@ -3,6 +3,7 @@ import logging
 import faiss
 import math
 import numpy as np
+import os
 
 from .storage_interface import StorageInterface
 from .faiss_utils import IndexPartitionWriter
@@ -86,10 +87,15 @@ class FaissIvf(StorageInterface):
         self._dimensions = kwargs["dimensions"]
         self._factory_string = f"IVF{self._nlist},SQfp16"
 
-        self._index = faiss.index_factory(self._dimensions, self._factory_string)
-        logger.info(
-            f"Initializing Faiss client with the factory string: {self._factory_string}."
-        )
+        self._centroid_index_path = os.path.join(self._collection_dir, "centroid.index")
+        if os.path.exists(self._centroid_index_path) or kwargs.get("force_train", False):
+            logger.info(f"Loading existing centroid index from {self._centroid_index_path}")
+            self._index = faiss.read_index(self._centroid_index_path)
+        else:
+            logger.info(
+                f"Initializing Faiss client with the factory string: {self._factory_string}."
+            )
+            self._index = faiss.index_factory(self._dimensions, self._factory_string)
 
         self._writer = IndexPartitionWriter(
             centroid_index=self._index, 
@@ -154,6 +160,8 @@ class FaissIvf(StorageInterface):
         logging.info(f"Training index with shape: {train_stack.shape}")
         self._index.train(train_stack)
         logging.info("Training complete.")
+        faiss.write_index(self._index, self._centroid_index_path)
+        logging.info(f"Saved centroid index to: {self._centroid_index_path}")
 
         # once trained, add all the training data back into the db.
         for id, embedding, metadata in zip(
