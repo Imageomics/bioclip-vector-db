@@ -138,6 +138,8 @@ class IndexPartitionWriter:
             # Check if there's anything left to write
             if self._partition_to_embedding_map[partition_id]:
                 self._write_partition_to_file(partition_id)
+        
+        self._metadata_db.batch_add_mapping(self._metadatas_batch)
 
     def _get_health(self) -> Dict[str, Any]:
         """Helper method to print the overall health of the index"""

@@ -134,7 +134,7 @@ class MetadataDatabase:
                     "INSERT INTO id_mapping (partition_id, faiss_id, original_id, metadata) VALUES (?, ?, ?, ?)",
                     data_to_insert,
                 )
-                logger.info(f"Added {len(mappings)} mappings.")
+                logger.debug(f"Added {len(mappings)} mappings.")
         except sqlite3.IntegrityError as e:
             logger.warning(
                 f"One or more mappings in the batch already exist. Error: {e}"
