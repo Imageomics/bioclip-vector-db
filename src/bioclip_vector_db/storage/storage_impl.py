@@ -75,12 +75,12 @@ class FaissIvf(StorageInterface):
             raise ValueError("Faiss cannot be initialized without dimensions.")
         if "dataset_size" not in kwargs:
             raise ValueError("Faiss cannot be initialized without dataset_size.")
-        
+
         # The 'nlist' parameter is a crucial hyperparameter for balancing search speed and accuracy.
         # A common rule of thumb, recommended by the FAISS authors, is to set nlist to be between
         # 4 * sqrt(N) and 16 * sqrt(N), where N is the total number of vectors in the dataset.
         # nlist denotes the number of local clusters.
-        self._nlist =  math.floor(4 * math.sqrt(kwargs["dataset_size"]))
+        self._nlist = math.floor(4 * math.sqrt(kwargs["dataset_size"]))
         self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
@@ -88,9 +88,14 @@ class FaissIvf(StorageInterface):
         self._factory_string = f"IVF{self._nlist},SQfp16"
 
         self._centroid_index_path = os.path.join(self._collection_dir, "leader.index")
-        if os.path.exists(self._centroid_index_path) or kwargs.get("force_train", False):
-            logger.info(f"Loading existing centroid index from {self._centroid_index_path}")
+        if os.path.exists(self._centroid_index_path) or kwargs.get(
+            "force_train", False
+        ):
+            logger.info(
+                f"Loading existing centroid index from {self._centroid_index_path}"
+            )
             self._index = faiss.read_index(self._centroid_index_path)
+            logger.info(f"Loaded index from disk: {self._centroid_index_path} with {self._index.ntotal} vectors.")
         else:
             logger.info(
                 f"Initializing Faiss client with the factory string: {self._factory_string}."
@@ -98,9 +103,9 @@ class FaissIvf(StorageInterface):
             self._index = faiss.index_factory(self._dimensions, self._factory_string)
 
         self._writer = IndexPartitionWriter(
-            centroid_index=self._index, 
+            centroid_index=self._index,
             batch_size=kwargs.get("write_partition_buffer_size", 1000),
-            collection_dir=self._collection_dir
+            collection_dir=self._collection_dir,
         )
 
         logger.info(f"Number of clusters: {self._nlist}")
@@ -139,7 +144,8 @@ class FaissIvf(StorageInterface):
         embeddings: List[List[float]],
         metadatas: List[Dict[str, str]],
     ):
-        if len(self._train_ids) < self._train_set_size:
+        # Skip training if the training set size is smaller or if the index is untrained.
+        if len(self._train_ids) < self._train_set_size and not self._index.is_trained:
             self._train_ids.extend(ids)
             self._train_embeddings.extend(embeddings)
             self._train_metadatas.extend(metadatas)
