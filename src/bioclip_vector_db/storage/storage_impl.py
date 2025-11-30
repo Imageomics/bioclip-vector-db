@@ -109,7 +109,7 @@ class FaissIvf(StorageInterface):
             collection_dir=self._collection_dir,
         )
 
-        self._train_set_size = 15000
+        self._train_set_size = 60000
 
         logger.info(f"Number of clusters: {self._nlist}")
         logger.info(f"Training set size: {self._train_set_size}")
