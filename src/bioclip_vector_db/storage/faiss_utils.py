@@ -119,7 +119,6 @@ class IndexPartitionWriter:
         partition_id = int(partition_ids[0][0])
 
         faiss_id = self._partition_faiss_ids[partition_id]
-        # self._metadata_db.add_mapping(partition_id, faiss_id, original_id, metadata)
         self._partition_faiss_ids[partition_id] += 1
 
         self._partition_to_embedding_map[partition_id].append(embedding)
