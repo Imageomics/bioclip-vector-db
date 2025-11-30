@@ -80,7 +80,7 @@ class FaissIvf(StorageInterface):
         # A common rule of thumb, recommended by the FAISS authors, is to set nlist to be between
         # 4 * sqrt(N) and 16 * sqrt(N), where N is the total number of vectors in the dataset.
         # nlist denotes the number of local clusters.
-        self._nlist =  math.floor(10 * math.sqrt(kwargs["dataset_size"]))
+        self._nlist =  math.floor(4 * math.sqrt(kwargs["dataset_size"]))
         self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
