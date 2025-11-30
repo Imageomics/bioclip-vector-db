@@ -4,11 +4,12 @@ import faiss
 import math
 import numpy as np
 import os
+import json
 
 from .storage_interface import StorageInterface
 from .faiss_utils import IndexPartitionWriter
 from typing import List, Dict
-from collections import defaultdict
+
 
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
@@ -154,6 +155,8 @@ class FaissIvf(StorageInterface):
         else:
             for id, embedding, metadata in zip(ids, embeddings, metadatas):
                 self._add_embedding_to_index(id, embedding, metadata)
+
+        logger.info(json.dumps(self._writer._get_health(), indent=2))
 
     def query(self, id: str):
         pass
