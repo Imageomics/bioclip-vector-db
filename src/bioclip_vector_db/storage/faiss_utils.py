@@ -94,7 +94,11 @@ class IndexPartitionWriter:
 
     def _maybe_flush_buffers(self):
         """Checks all partition buffers and writes them to disk if they exceed batch size."""
+        print("Attempting to flush buffers.")
         for partition_id in list(self._partition_to_embedding_map.keys()):
+            print(
+                f"len(self._partition_to_embedding_map[partition_id]) = {len(self._partition_to_embedding_map[partition_id])}"
+            )
             if len(self._partition_to_embedding_map[partition_id]) >= self._batch_size:
                 self._write_partition_to_file(partition_id)
 
@@ -141,7 +145,7 @@ class IndexPartitionWriter:
             "num_partitions": len(num_records_per_partition),
             "num_records_in_memory": sum(num_records_per_partition),
             "avg_num_records_per_partition": sum(num_records_per_partition)
-            // (len(num_records_per_partition) + 1)
+            // (len(num_records_per_partition) + 1),
         }
 
     def _add_to_index_partitions(self):

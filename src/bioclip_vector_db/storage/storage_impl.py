@@ -156,6 +156,7 @@ class FaissIvf(StorageInterface):
         else:
             for id, embedding, metadata in zip(ids, embeddings, metadatas):
                 self._add_embedding_to_index(id, embedding, metadata)
+            logger.info(f"Is Index trained? {self._index.is_trained}")
             logger.info(json.dumps(self._writer._get_health(), indent=2))
         
     def query(self, id: str):
