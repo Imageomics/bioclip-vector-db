@@ -87,7 +87,7 @@ class FaissIvf(StorageInterface):
         self._dimensions = kwargs["dimensions"]
         self._factory_string = f"IVF{self._nlist},SQfp16"
 
-        self._centroid_index_path = os.path.join(self._collection_dir, "centroid.index")
+        self._centroid_index_path = os.path.join(self._collection_dir, "leader.index")
         if os.path.exists(self._centroid_index_path) or kwargs.get("force_train", False):
             logger.info(f"Loading existing centroid index from {self._centroid_index_path}")
             self._index = faiss.read_index(self._centroid_index_path)

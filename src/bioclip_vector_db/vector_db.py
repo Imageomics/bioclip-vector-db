@@ -220,7 +220,7 @@ class BioclipVectorDatabase:
         for data_batch in tqdm(batched_iterator):
             metadatas_batch = [
                 {key: data_batch[key][i] for key in _LOCAL_EMBEDDING_KEYS}
-                for i in range(self._batch_size)
+                for i in range(len(data_batch["uuid"]))
             ]
             num_records += len(data_batch["uuid"])
             self._storage.batch_add_embeddings(
