@@ -1,0 +1,19 @@
+name: faiss_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - faiss-gpu-cuvs=1.13.1
+  - libnvjitlink
+  - cuda-cudart
+  - cuda-version=12
+  - ipykernel
+  - open-clip-torch
+  - pyspark
+  - fastapi
+  - flask
+  - gradio
+  - uvicorn
+  - h5py
+

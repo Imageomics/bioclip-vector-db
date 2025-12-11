@@ -84,7 +84,8 @@ def embed_image(image: Image.Image, model, preprocess) -> List[float]:
         List of floats representing the image embedding
     """
     
-    image_preprocessed = preprocess(image).unsqueeze(0)
+    device = next(model.parameters()).device
+    image_preprocessed = preprocess(image).unsqueeze(0).to(device)
     image_features = model.encode_image(image_preprocessed)
     image_features /= image_features.norm(dim=-1, keepdim=True)
     
