@@ -122,6 +122,10 @@ python src/bioclip_vector_db/query_monolithic/neighborhood_server.py \
 
 ``` bash
 curl -s -X GET -H "Content-Type: application/json" http://localhost:5001/health | jq
+
+curl -s -X POST http://localhost:5001/search \
+  -H "Content-Type: application/json" \
+  -d @docs/query_example_768.json | jq
 ```
 
 ## Setup Front-end Application

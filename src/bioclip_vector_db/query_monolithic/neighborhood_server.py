@@ -181,6 +181,15 @@ class FaissIndexService:
 
         if queries.ndim == 1:
             queries = queries.reshape(1, -1)
+        
+        # Validate vector dimensions
+        expected_dim = self.index.d
+        actual_dim = queries.shape[1]
+        if actual_dim != expected_dim:
+            raise ValueError(
+                f"Query vector dimension mismatch: expected {expected_dim}, got {actual_dim}. "
+                f"Ensure you are using embeddings from the correct model (e.g., BioCLIP-2 for 768-dim vectors)."
+            )
             
         n_query = queries.shape[0]
         
