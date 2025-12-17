@@ -62,6 +62,7 @@ class AppConfig:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.enable_export = enable_export
         self.current_results: List[Image.Image] = []
+        self.current_metadata: List[Dict] = []
 
 
 class BioCLIPSearchApp:
@@ -157,7 +158,7 @@ class BioCLIPSearchApp:
         img: Optional[Image.Image],
         top_n: int,
         nprobe: int
-    ) -> List[Image.Image]:
+    ) -> tuple:
         """Perform image search.
         
         Args:
@@ -166,12 +167,13 @@ class BioCLIPSearchApp:
             nprobe: Number of clusters to probe in the search
             
         Returns:
-            List of similar images
+            Tuple of (gallery images, tree summary)
         """
         # Handle case when image is deleted/cleared
         if img is None:
             self.config.current_results = []
-            return []
+            self.config.current_metadata = []
+            return [], "No results."
         
         try:
             # 1. Embed the query image
@@ -205,21 +207,155 @@ class BioCLIPSearchApp:
             logger.info(f"Retrieving {len(uuid_list)} images...")
             images_map = self._retrieve_images(uuid_list)
             
-            # 5. Order results matching the search order
+            # 5. Order results matching the search order, preserving metadata
             ordered_images = []
-            for uuid in uuid_list:
+            ordered_metadata = []
+            for i, uuid in enumerate(uuid_list):
                 if uuid in images_map and images_map[uuid] is not None:
                     ordered_images.append(images_map[uuid])
+                    ordered_metadata.append(search_results[i])
             
             self.config.current_results = ordered_images
+            self.config.current_metadata = ordered_metadata
             logger.info(f"Search completed. Found {len(self.config.current_results)} images")
-            return self.config.current_results
+            return self.config.current_results, self._generate_tree_summary()
             
         except Exception as e:
             logger.error(f"Error during search: {e}", exc_info=True)
             gr.Warning(f"Search failed: {str(e)}")
-            return []
+            return [], "Search failed."
     
+    def on_gallery_select(self, evt: gr.SelectData) -> tuple:
+        """Handle gallery image selection to display metadata.
+        
+        Args:
+            evt: Gradio SelectData event containing the selected index
+            
+        Returns:
+            Tuple of (selected_image, metadata_markdown)
+        """
+        if not self.config.current_results or evt.index >= len(self.config.current_results):
+            return None, "*No image selected*"
+        
+        selected_image = self.config.current_results[evt.index]
+        
+        if evt.index < len(self.config.current_metadata):
+            meta = self.config.current_metadata[evt.index]
+            metadata_md = self._format_metadata(meta, evt.index + 1)
+        else:
+            metadata_md = "*No metadata available*"
+        
+        return selected_image, metadata_md
+    
+    def _format_metadata(self, meta: Dict, rank: int) -> str:
+        """Format metadata dictionary as Markdown for display.
+        
+        Args:
+            meta: Metadata dictionary from search results
+            rank: The result rank (1-indexed)
+            
+        Returns:
+            Formatted Markdown string
+        """
+        common_name = meta.get("common_name") or "Common Name Unknown"
+        scientific_name = meta.get("scientific_name") or meta.get("species") or "Scientific Name Unknown"
+        distance = meta.get("distance", 0)
+        
+        # Taxonomy as single line with header
+        taxonomy_parts = []
+        for key in ["kingdom", "phylum", "class", "order", "family", "genus"]:
+            value = meta.get(key)
+            taxonomy_parts.append(value if value else "-")
+        taxonomy_str = " > ".join(taxonomy_parts)
+        taxonomy_header = "Kingdom > Phylum > Class > Order > Family > Genus"
+        
+        # Source with GBIF link if applicable
+        source = meta.get("source_dataset", "Unknown")
+        source_id = meta.get("source_id", "")
+        if source and source.lower() == "gbif" and source_id:
+            source_display = f"[GBIF](https://gbif.org/occurrence/{source_id})"
+        else:
+            source_display = source or "Unknown"
+        
+        publisher = meta.get("publisher", "Unknown")
+        img_type = meta.get("img_type", "Unknown")
+        identifier = meta.get("identifier", "")
+        url_link = f"[View Original]({identifier})" if identifier else ""
+        
+        md = f"""**#{rank} {common_name}**  
+*{scientific_name}*  
+**Distance:** {distance:.4f}
+
+**Taxonomy:** {taxonomy_header}  
+{taxonomy_str}
+
+**Source:** {source_display}  
+**Type:** {img_type}  
+**Publisher:** {publisher}  
+{url_link}"""
+        return md.strip()
+    
+    def _generate_tree_summary(self) -> str:
+        """Generate a taxonomic tree summary of search results.
+        
+        Returns:
+            Tree-formatted string showing taxonomy frequency counts
+        """
+        if not self.config.current_metadata:
+            return "No results to summarize."
+        
+        from collections import defaultdict
+        
+        # Build nested counts: kingdom > phylum > class > order > family
+        tree = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(int)))))
+        
+        for meta in self.config.current_metadata:
+            kingdom = meta.get("kingdom") or "Unknown"
+            phylum = meta.get("phylum") or "Unknown"
+            cls = meta.get("class") or "Unknown"
+            order = meta.get("order") or "Unknown"
+            family = meta.get("family") or "Unknown"
+            tree[kingdom][phylum][cls][order][family] += 1
+        
+        # Format as tree
+        lines = [f"Search Results: {len(self.config.current_metadata)} images", ""]
+        
+        for kingdom, phyla in sorted(tree.items()):
+            k_count = sum(sum(sum(sum(f.values()) for f in o.values()) for o in c.values()) for c in phyla.values())
+            lines.append(f"├── {kingdom} ({k_count})")
+            
+            phyla_list = list(sorted(phyla.items()))
+            for p_idx, (phylum, classes) in enumerate(phyla_list):
+                p_count = sum(sum(sum(f.values()) for f in o.values()) for o in classes.values())
+                p_last = p_idx == len(phyla_list) - 1
+                p_prefix = "│   └── " if p_last else "│   ├── "
+                p_cont = "│       " if not p_last else "        "
+                lines.append(f"{p_prefix}{phylum} ({p_count})")
+                
+                classes_list = list(sorted(classes.items()))
+                for c_idx, (cls, orders) in enumerate(classes_list):
+                    c_count = sum(sum(f.values()) for f in orders.values())
+                    c_last = c_idx == len(classes_list) - 1
+                    c_prefix = f"{p_cont}└── " if c_last else f"{p_cont}├── "
+                    c_cont = f"{p_cont}    " if c_last else f"{p_cont}│   "
+                    lines.append(f"{c_prefix}{cls} ({c_count})")
+                    
+                    orders_list = list(sorted(orders.items()))
+                    for o_idx, (order, families) in enumerate(orders_list):
+                        o_count = sum(families.values())
+                        o_last = o_idx == len(orders_list) - 1
+                        o_prefix = f"{c_cont}└── " if o_last else f"{c_cont}├── "
+                        o_cont = f"{c_cont}    " if o_last else f"{c_cont}│   "
+                        lines.append(f"{o_prefix}{order} ({o_count})")
+                        
+                        families_list = list(sorted(families.items()))
+                        for f_idx, (family, count) in enumerate(families_list):
+                            f_last = f_idx == len(families_list) - 1
+                            f_prefix = f"{o_cont}└── " if f_last else f"{o_cont}├── "
+                            lines.append(f"{f_prefix}{family} ({count})")
+        
+        return "\n".join(lines)
+
     def export_results(self) -> Optional[str]:
         """Export current search results as a zip file.
         
@@ -266,8 +402,9 @@ class BioCLIPSearchApp:
             gr.Markdown("# BioCLIP - Image Search")
             
             with gr.Row():
+                # Left panel: Input controls
                 with gr.Column(scale=1, min_width=280):
-                    img = gr.Image(type="pil", label="Upload Image", height=360)
+                    img = gr.Image(type="pil", label="Upload Image", height=300)
                     
                     nprobe = gr.Slider(
                         1, 128, value=16, step=1, 
@@ -287,24 +424,51 @@ class BioCLIPSearchApp:
                         variant="secondary",
                         visible=self.config.enable_export
                     )
-                    
-                with gr.Column(scale=2):
-                    gallery = gr.Gallery(
-                        label="Search Output Gallery",
-                        columns=5,
-                        height=640,
-                        elem_classes="custom-gallery"
-                    )
                     download_file = gr.File(
                         label="Export", 
                         visible=self.config.enable_export
                     )
+                
+                # Middle panel: Gallery
+                with gr.Column(scale=2):
+                    gallery = gr.Gallery(
+                        label="Search Output Gallery",
+                        columns=4,
+                        height=640,
+                        elem_classes="custom-gallery"
+                    )
+                
+                # Right panel: Selected image details with tabs
+                with gr.Column(scale=1, min_width=300):
+                    with gr.Tabs():
+                        with gr.TabItem("Selected"):
+                            selected_image = gr.Image(
+                                label="Selected Image",
+                                height=280,
+                                show_label=False
+                            )
+                            metadata_display = gr.Markdown(
+                                value="*Click an image to see details*"
+                            )
+                        with gr.TabItem("Summary"):
+                            tree_summary = gr.Code(
+                                label="Taxonomy Tree",
+                                language=None,
+                                lines=25,
+                                value="Run a search to see summary."
+                            )
             
             # Event handlers
             run.click(
                 self.search,
                 inputs=[img, top_n, nprobe],
-                outputs=[gallery]
+                outputs=[gallery, tree_summary]
+            )
+            
+            gallery.select(
+                self.on_gallery_select,
+                inputs=[],
+                outputs=[selected_image, metadata_display]
             )
             
             if self.config.enable_export:
