@@ -20,39 +20,48 @@ SESSION="bioclip_services"
 tmux new-session -d -s $SESSION
 
 # ------------------------------------------------------------------
-# Window 0: Image Server
+# Window 0: Model Server (BioCLIP Embedding & Prediction)
 # ------------------------------------------------------------------
-tmux rename-window -t $SESSION:0 'image_server'
+tmux rename-window -t $SESSION:0 'model_server'
 tmux send-keys -t $SESSION:0 "conda activate faiss_env" C-m
-tmux send-keys -t $SESSION:0 "python src/bioclip_vector_db/query/image_server.py \\
+tmux send-keys -t $SESSION:0 "python src/bioclip_vector_db/model/model_server.py \\
+    --device cpu \\
+    --port 5002" C-m
+
+# ------------------------------------------------------------------
+# Window 1: Image Server
+# ------------------------------------------------------------------
+tmux new-window -t $SESSION:1 -n 'image_server'
+tmux send-keys -t $SESSION:1 "conda activate faiss_env" C-m
+tmux send-keys -t $SESSION:1 "python src/bioclip_vector_db/query/image_server.py \\
     --lookup_path /fs/scratch/PAS2136/TreeOfLife/image_lookup/2024-05-01/hdf5/200M/lookup_temp.db \\
-    --port 5002 \\
+    --port 5003 \\
     --workers 16 \\
     --h5_group images" C-m
 
 # ------------------------------------------------------------------
-# Window 1: FAISS Search Server
+# Window 2: FAISS Search Server
 # ------------------------------------------------------------------
-tmux new-window -t $SESSION:1 -n 'faiss_server'
-tmux send-keys -t $SESSION:1 "conda activate faiss_env" C-m
-tmux send-keys -t $SESSION:1 "python src/bioclip_vector_db/query_monolithic/neighborhood_server.py \\
+tmux new-window -t $SESSION:2 -n 'faiss_server'
+tmux send-keys -t $SESSION:2 "conda activate faiss_env" C-m
+tmux send-keys -t $SESSION:2 "python src/bioclip_vector_db/query_monolithic/neighborhood_server.py \\
     --index-path /fs/scratch/PAS2136/TreeOfLife/embeddings/vector_db_sample/index_200M_normalized_stratified_merged.index \\
     --id-lookup-path /fs/scratch/PAS2136/TreeOfLife/embeddings/vector_db_sample/flight_plan/lookup.db \\
     --nprobes 12 \\
     --port 5001" C-m
 
 # ------------------------------------------------------------------
-# Window 2: Gradio App
+# Window 3: Gradio App
 # ------------------------------------------------------------------
-tmux new-window -t $SESSION:2 -n 'app'
+tmux new-window -t $SESSION:3 -n 'app'
 # Give servers a moment to start up before launching the app
-tmux send-keys -t $SESSION:2 "conda activate faiss_env" C-m
-tmux send-keys -t $SESSION:2 "sleep 10; python app_gr_new.py \\
+tmux send-keys -t $SESSION:3 "conda activate faiss_env" C-m
+tmux send-keys -t $SESSION:3 "sleep 15; python app_gr_new.py \\
+    --model-server http://localhost:5002 \\
     --neighborhood-server http://localhost:5001 \\
-    --image-server http://localhost:5002 \\
+    --image-server http://localhost:5003 \\
     --host 0.0.0.0 \\
     --port 7860 \\
-    --model hf-hub:imageomics/bioclip-2 \\
     --disable-export" C-m
 
 # ------------------------------------------------------------------

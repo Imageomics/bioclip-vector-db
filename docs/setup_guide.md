@@ -14,7 +14,7 @@ Before running the demo, ensure the following resources are available:
 
 ## Quick Start (Recommended)
 
-For a quick start, you can use the provided SLURM script to launch all services (Image Server, FAISS Server, and Gradio App) in a single job using `tmux`.
+For a quick start, you can use the provided SLURM script to launch all services (Model Server, FAISS Server, Image Server, and Gradio App) in a single job using `tmux`.
 
 1. **Submit the job:**
    ```bash
@@ -65,6 +65,47 @@ Allocate compute node with abundant RAM & CPU cores.
 salloc -A PAS2136 -p cpu -N 1 -c 32 -t 2:00:00
 ```
 
+## Setup Model Server
+
+Spin up a tmux session to provide BioCLIP model inference service (embedding & prediction).
+
+```
+Requirements:
+- pybioclip package installed
+- GPU recommended for faster inference (optional)
+```
+
+``` bash
+tmux new -s model_server
+conda activate faiss_env
+
+python src/bioclip_vector_db/model/model_server.py \
+    --device cpu \
+    --port 5002
+```
+
+``` bash
+# Health check
+curl -s http://localhost:5002/health | jq
+
+# Generate embedding for an image URL
+curl -X POST http://localhost:5002/embed \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_urls": ["https://inaturalist-open-data.s3.amazonaws.com/photos/539226/original.JPG"],
+    "normalize": false
+  }' | jq '.data.embedding_dim'
+
+# Predict species for an image
+curl -X POST http://localhost:5002/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_urls": ["https://inaturalist-open-data.s3.amazonaws.com/photos/539226/original.JPG"],
+    "rank": "species",
+    "k": 5
+  }' | jq
+```
+
 ## Setup Image Server
 
 Spin up a tmux session to provide image retrieval service.
@@ -80,16 +121,16 @@ tmux new -s image_server
 conda activate faiss_env
 
 python src/bioclip_vector_db/query/image_server.py \
-    --lookup_path /fs/scratch/PAS2136/TreeOfLife/image_lookup/2024-05-01/hdf5/200M lookup_temp.db \
-    --port 5002 \
+    --lookup_path /fs/scratch/PAS2136/TreeOfLife/image_lookup/2024-05-01/hdf5/200M/lookup_temp.db \
+    --port 5003 \
     --workers 16 \
     --h5_group images
 ```
 
 ``` bash
-curl -s -X GET -H "Content-Type: application/json" http://localhost:5002/health | jq
+curl -s -X GET -H "Content-Type: application/json" http://localhost:5003/health | jq
 
-curl -X POST http://localhost:5002/images \
+curl -X POST http://localhost:5003/images \
   -H "Content-Type: application/json" \
   -d '{
     "uuids": [
@@ -137,10 +178,10 @@ tmux new -s app
 conda activate faiss_env
 
 python app_gr_new.py \
+        --model-server http://localhost:5002 \
         --neighborhood-server http://localhost:5001 \
-        --image-server http://localhost:5002 \
+        --image-server http://localhost:5003 \
         --host 0.0.0.0 \
         --port 7860 \
-        --model hf-hub:imageomics/bioclip-2 \
         --disable-export
 ```
