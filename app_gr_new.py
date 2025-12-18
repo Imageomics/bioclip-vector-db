@@ -1,16 +1,17 @@
 """BioCLIP - Image Search Application.
 
 A Gradio web interface for BioCLIP Vector DB, connecting to:
-1. Neighborhood Server (Vector Search)
-2. Image Server (Image Retrieval)
+1. Model Server (Image Embedding)
+2. Neighborhood Server (Vector Search)
+3. Image Server (Image Retrieval)
 
 Usage:
     python app_gr_new.py \
+        --model-server http://localhost:5002 \
         --neighborhood-server http://localhost:5001 \
-        --image-server http://localhost:5002 \
+        --image-server http://localhost:5003 \
         --host 0.0.0.0 \
         --port 7860 \
-        --model hf-hub:imageomics/bioclip-2 \
         --disable-export
         
 """
@@ -26,11 +27,7 @@ from datetime import datetime
 from typing import List, Optional, Dict
 
 import gradio as gr
-import open_clip
-import torch
 from PIL import Image
-
-from src.app.server.image import embed_image
 
 # Configure logging
 logging.basicConfig(
@@ -50,16 +47,14 @@ class AppConfig:
     """Application configuration."""
     def __init__(
         self,
+        model_server_url: str,
         neighborhood_server_url: str,
         image_server_url: str,
-        model_name: str,
-        device: Optional[str] = None,
         enable_export: bool = True
     ):
+        self.model_server_url = model_server_url
         self.neighborhood_server_url = neighborhood_server_url
         self.image_server_url = image_server_url
-        self.model_name = model_name
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.enable_export = enable_export
         self.current_results: List[Image.Image] = []
         self.current_metadata: List[Dict] = []
@@ -75,18 +70,191 @@ class BioCLIPSearchApp:
             config: Application configuration object
         """
         self.config = config
-        self.model = None
-        self.preprocess = None
-        self._initialize()
+        self._check_services()
     
-    def _initialize(self):
-        """Initialize models."""
-        logger.info(f"Initializing model {self.config.model_name} on device: {self.config.device}")
-        self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-            self.config.model_name,
-            device=self.config.device
-        )
-        logger.info("Initialization complete")
+    def _check_services(self):
+        """Check if required services are available."""
+        logger.info("Checking service availability...")
+        try:
+            response = requests.get(f"{self.config.model_server_url}/health", timeout=5)
+            if response.ok:
+                data = response.json()
+                logger.info(f"Model server ready: {data.get('data', {})}")
+            else:
+                logger.warning(f"Model server health check failed: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Could not reach model server: {e}")
+        logger.info("Service check complete")
+
+    def _embed_image(self, img: Image.Image) -> List[float]:
+        """Embed image via the model server.
+        
+        Args:
+            img: PIL Image to embed
+            
+        Returns:
+            List of floats representing the image embedding
+        """
+        url = f"{self.config.model_server_url}/embed"
+        
+        # Convert image to base64
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format='PNG')
+        img_b64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
+        payload = {
+            "images": [img_b64],
+            "normalize": False  # Let the vector DB handle normalization
+        }
+        
+        try:
+            response = requests.post(url, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("status") == "success" and "data" in data:
+                embeddings = data["data"].get("embeddings", [])
+                if embeddings:
+                    return embeddings[0]
+            
+            raise ValueError(f"Unexpected response format: {data}")
+            
+        except Exception as e:
+            logger.error(f"Image embedding failed: {e}")
+            raise
+
+    def predict(
+        self,
+        img: Optional[Image.Image],
+        rank: str,
+        k: int = 5
+    ) -> str:
+        """Predict taxonomy for an image via the model server.
+        
+        Args:
+            img: PIL Image to classify
+            rank: Taxonomic rank to predict (kingdom, phylum, class, order, family, genus, species)
+            k: Number of top predictions to return
+            
+        Returns:
+            Formatted HTML string with predictions and confidence bars
+        """
+        if img is None:
+            return "<p style='color: #888;'>Upload an image to get predictions.</p>"
+        
+        url = f"{self.config.model_server_url}/predict"
+        
+        # Convert image to base64
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format='PNG')
+        img_b64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
+        payload = {
+            "images": [img_b64],
+            "rank": rank.lower(),
+            "k": k
+        }
+        
+        try:
+            logger.info(f"Predicting taxonomy at rank '{rank}' via model server...")
+            response = requests.post(url, json=payload, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("status") == "success" and "data" in data:
+                predictions = data["data"].get("predictions", [])
+                if predictions and len(predictions) > 0:
+                    return self._format_predictions(predictions[0], rank)
+            
+            return "<p style='color: #f88;'>No predictions returned.</p>"
+            
+        except Exception as e:
+            logger.error(f"Prediction failed: {e}")
+            return f"<p style='color: #f88;'>Prediction error: {str(e)}</p>"
+    
+    def _format_predictions(self, predictions: List[Dict], rank: str) -> str:
+        """Format prediction results as HTML with confidence bars.
+        
+        Args:
+            predictions: List of prediction dictionaries from model server
+            rank: The taxonomic rank that was predicted
+            
+        Returns:
+            HTML string with formatted predictions
+        """
+        if not predictions:
+            return "<p style='color: #888;'>No predictions available.</p>"
+        
+        # Build taxonomy string for the top prediction
+        top = predictions[0]
+        taxonomy_parts = []
+        for key in ["kingdom", "phylum", "class", "order", "family", "genus"]:
+            value = top.get(key)
+            if value:
+                taxonomy_parts.append(value)
+        
+        species = top.get("species", "")
+        common_name = top.get("common_name", "")
+        
+        # Header with top prediction
+        header_text = " ".join(taxonomy_parts)
+        if species:
+            header_text += f" {species}"
+        if common_name:
+            header_text += f" ({common_name})"
+        
+        html = f'''
+<div style="font-family: system-ui, -apple-system, sans-serif;">
+    <h3 style="color: #ff9500; margin-bottom: 16px; font-size: 18px; line-height: 1.4;">
+        {header_text}
+    </h3>
+    <hr style="border: none; border-top: 2px solid #ff9500; margin-bottom: 16px;">
+'''
+        
+        # Add each prediction with confidence bar
+        for pred in predictions:
+            score = pred.get("score", 0)
+            pct = score * 100
+            
+            # Build label
+            label_parts = []
+            for key in ["kingdom", "phylum", "class", "order", "family", "genus"]:
+                value = pred.get(key)
+                if value:
+                    label_parts.append(value)
+            
+            pred_species = pred.get("species", "")
+            pred_common = pred.get("common_name", "")
+            
+            if pred_species:
+                label_parts.append(pred_species)
+            
+            label = " ".join(label_parts)
+            if pred_common:
+                label += f" ({pred_common})"
+            
+            # Color gradient based on confidence
+            if pct >= 50:
+                bar_color = "#ff9500"
+            elif pct >= 10:
+                bar_color = "#ffb347"
+            else:
+                bar_color = "#666"
+            
+            html += f'''
+    <div style="margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="color: #ddd; font-size: 14px;">{label}</span>
+            <span style="color: #888; font-size: 14px;">{pct:.0f}%</span>
+        </div>
+        <div style="background: #333; border-radius: 4px; height: 6px; overflow: hidden;">
+            <div style="background: {bar_color}; width: {pct}%; height: 100%; border-radius: 4px;"></div>
+        </div>
+    </div>
+'''
+        
+        html += "</div>"
+        return html
 
     def _search_vectors(self, query_vector: List[float], top_n: int, nprobe: int) -> List[Dict]:
         """Calls the Neighborhood Server to find nearest neighbors."""
@@ -176,9 +344,9 @@ class BioCLIPSearchApp:
             return [], "No results."
         
         try:
-            # 1. Embed the query image
-            logger.info("Embedding query image...")
-            img_embedded = embed_image(img, self.model, self.preprocess)
+            # 1. Embed the query image via model server
+            logger.info("Embedding query image via model server...")
+            img_embedded = self._embed_image(img)
             
             # 2. Search for similar vectors
             logger.info(f"Searching vectors (top_n={top_n}, nprobe={nprobe})...")
@@ -418,7 +586,7 @@ class BioCLIPSearchApp:
                         info="Number of nearest neighbors to return."
                     )
         
-                    run = gr.Button("Run", variant="primary")
+                    run = gr.Button("Search", variant="primary")
                     export_btn = gr.Button(
                         "Export Results", 
                         variant="secondary",
@@ -429,14 +597,27 @@ class BioCLIPSearchApp:
                         visible=self.config.enable_export
                     )
                 
-                # Middle panel: Gallery
+                # Middle panel: Gallery and Prediction tabs
                 with gr.Column(scale=2):
-                    gallery = gr.Gallery(
-                        label="Search Output Gallery",
-                        columns=4,
-                        height=640,
-                        elem_classes="custom-gallery"
-                    )
+                    with gr.Tabs():
+                        with gr.TabItem("Search Results"):
+                            gallery = gr.Gallery(
+                                label="Search Output Gallery",
+                                columns=4,
+                                height=580,
+                                elem_classes="custom-gallery"
+                            )
+                        with gr.TabItem("Prediction"):
+                            rank_dropdown = gr.Dropdown(
+                                choices=["kingdom", "phylum", "class", "order", "family", "genus", "species"],
+                                value="species",
+                                label="Taxonomic Rank",
+                                info="Which taxonomic rank to predict. Fine-grained ranks (genus, species) are more challenging."
+                            )
+                            prediction_output = gr.HTML(
+                                value="<p style='color: #888;'>Upload an image and select a rank to get taxonomy predictions.</p>",
+                                label="Predictions"
+                            )
                 
                 # Right panel: Selected image details with tabs
                 with gr.Column(scale=1, min_width=300):
@@ -465,6 +646,19 @@ class BioCLIPSearchApp:
                 outputs=[gallery, tree_summary]
             )
             
+            # Trigger prediction on rank selection change or image upload
+            rank_dropdown.change(
+                self.predict,
+                inputs=[img, rank_dropdown],
+                outputs=[prediction_output]
+            )
+            
+            img.change(
+                self.predict,
+                inputs=[img, rank_dropdown],
+                outputs=[prediction_output]
+            )
+            
             gallery.select(
                 self.on_gallery_select,
                 inputs=[],
@@ -491,6 +685,12 @@ def parse_arguments() -> argparse.Namespace:
         description="BioCLIP Vector Database - Image Search Application"
     )
     parser.add_argument(
+        "--model-server",
+        type=str,
+        default="http://localhost:5002",
+        help="URL of the Model (Embedding) Server (default: http://localhost:5002)"
+    )
+    parser.add_argument(
         "--neighborhood-server",
         type=str,
         default="http://localhost:5001",
@@ -499,8 +699,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--image-server",
         type=str,
-        default="http://localhost:5002",
-        help="URL of the Image Retrieval Server (default: http://localhost:5002)"
+        default="http://localhost:5003",
+        help="URL of the Image Retrieval Server (default: http://localhost:5003)"
     )
     parser.add_argument(
         "--host",
@@ -513,12 +713,6 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=7860,
         help="Port for the Gradio app server (default: 7860)"
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="hf-hub:imageomics/bioclip-2",
-        help="Model to embed the image (default: hf-hub:imageomics/bioclip-2). Make sure the model is compatible with OpenCLIP. Make sure the model is consistent with the one used to build the FAISS index."
     )
     parser.add_argument(
         "--disable-export",
@@ -535,9 +729,9 @@ def main():
     
     # Create configuration
     config = AppConfig(
+        model_server_url=args.model_server,
         neighborhood_server_url=args.neighborhood_server,
         image_server_url=args.image_server,
-        model_name=args.model,
         enable_export=not args.disable_export
     )
     
