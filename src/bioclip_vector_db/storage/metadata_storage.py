@@ -55,6 +55,11 @@ class MetadataDatabase:
                     )
                 """
                 )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_original_id ON id_mapping (original_id)
+                    """
+                )
                 logger.info("SQLITE: Create table successful.")
         except sqlite3.Error as e:
             logger.error(f"Error creating table: {e}")
@@ -150,7 +155,7 @@ class MetadataDatabase:
             logger.error(f"Error getting metadata: {e}")
             raise
 
-    def get_metadata(self, original_id: int) -> Optional[Dict[str, Any]]:
+    def get_metadata(self, original_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieves the metadata for a given original ID.
 
