@@ -18,6 +18,9 @@ dependencies = [
     "flask",
     "Pillow",
     "faiss-gpu-cu12",
+    "pyarrow",
+    "h5py",
+    "gradio",
     "gunicorn"
 ]
 
