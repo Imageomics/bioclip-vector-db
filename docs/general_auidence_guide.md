@@ -56,11 +56,11 @@ You can adjust two settings in the application to refine your search results. Th
     
 The chart below illustrates why increasing the Search Depth is often necessary.
 
-![Diagram comparing low and high search depth. Left panel shows a query image (Red X) near the border of one region, missing the true best match (Black Star) in an adjacent region because only one region is searched. Right panel shows the same scenario with increased search depth, where the search crosses into the neighboring region and successfully finds the Green Star.](search_depth_demo.png)
+![Diagram comparing low and high search depth. Left panel shows a query image (Red X) near the border of one region, missing the true best match (Black Star) in an adjacent region because only one region is searched. Right panel shows the same scenario with increased search depth, where the search crosses into the neighboring region and successfully finds the star (now green, indicating success).](search_depth_demo.png)
 
 **Left (Low Depth):** The user's image (Red X) falls just inside the blue region. However, the _true_ best match (Black Star) sits just across the border in the neighboring grey region. Because the system is set to look in only one region, it hits a "hard wall" and misses the best match.
 
-**Right (High Depth):** By increasing the search depth, the system is allowed to check neighboring regions. It successfully crosses the border and finds the Green Star.
+**Right (High Depth):** By increasing the search depth, the system is allowed to check neighboring regions. It successfully crosses the border and finds the star (now green, indicating success).
 
 **Note on Complexity:** This visualization uses a simple flat (2-dimensional) map for clarity. The actual BioCLIP image search system operates in **768-dimensional space**. In that complex environment, "borders" are much harder to define, making it even more important to check multiple neighboring groups to ensure you don't miss a relevant result hiding "just around the corner."
 ### 2. Top N Results (`top_n`)
