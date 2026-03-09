@@ -50,9 +50,9 @@ You can adjust two settings in the application to refine your search results. Th
 
 - **Definition:** The search depth parameter determines how many "library sections" (clusters) in which to search for similar "fingerprints".
     
-- **Low Setting (Faster):** Only the single most likely group is checked. This is very fast but might miss a match if the organism is categorized in a closely related neighboring group.
+- **Lowest Setting (Faster):** Only the single most likely group is checked. This is very fast but might miss a match if the organism is categorized in a closely related neighboring group.
     
-- **High Setting (Thorough):** The search is performed more broadly to check multiple related groups. This increases the chance of finding the best match but takes slightly longer.
+- **Higher Setting (Thorough):** The search is performed more broadly to check multiple related groups. This increases the chance of finding the best match but takes slightly longer.
     
 The chart below illustrates why increasing the Search Depth is often necessary.
 
