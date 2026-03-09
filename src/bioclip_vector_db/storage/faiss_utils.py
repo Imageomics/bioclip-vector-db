@@ -2,9 +2,12 @@ import logging
 import faiss
 import numpy as np
 import os
+import math
 
 from collections import defaultdict
 from .metadata_storage import MetadataDatabase
+from typing import Dict, Any
+
 
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
@@ -43,6 +46,7 @@ class IndexPartitionWriter:
         self._local_index_file = "local_{idx}.index"
         self._cleanup_temp_files = cleanup_temp_files
         self._partition_faiss_ids = defaultdict(int)
+        self._metadatas_batch = []
 
         # Ensure the output directory exists
         os.makedirs(self._collection_dir, exist_ok=True)
@@ -91,12 +95,16 @@ class IndexPartitionWriter:
 
     def _maybe_flush_buffers(self):
         """Checks all partition buffers and writes them to disk if they exceed batch size."""
-        # Iterate over a copy of keys for safe modification
         for partition_id in list(self._partition_to_embedding_map.keys()):
             if len(self._partition_to_embedding_map[partition_id]) >= self._batch_size:
                 self._write_partition_to_file(partition_id)
+        if len(self._metadatas_batch) >= self._batch_size:
+            self._metadata_db.batch_add_mapping(self._metadatas_batch)
+            self._metadatas_batch.clear()
 
-    def add_embedding(self, original_id: str, embedding: np.ndarray, metadata: dict = None):
+    def add_embedding(
+        self, original_id: str, embedding: np.ndarray, metadata: dict = None
+    ):
         """Adds a single embedding vector to the appropriate partition buffer.
 
         Args:
@@ -111,10 +119,15 @@ class IndexPartitionWriter:
         partition_id = int(partition_ids[0][0])
 
         faiss_id = self._partition_faiss_ids[partition_id]
-        self._metadata_db.add_mapping(partition_id, faiss_id, original_id, metadata)
         self._partition_faiss_ids[partition_id] += 1
 
         self._partition_to_embedding_map[partition_id].append(embedding)
+        self._metadatas_batch.append({
+            "original_id": original_id,
+            "partition_id": partition_id,
+            "faiss_id": faiss_id,
+            "metadata": metadata,
+        })
         self._maybe_flush_buffers()
 
     def _flush(self):
@@ -124,6 +137,23 @@ class IndexPartitionWriter:
             # Check if there's anything left to write
             if self._partition_to_embedding_map[partition_id]:
                 self._write_partition_to_file(partition_id)
+        
+        self._metadata_db.batch_add_mapping(self._metadatas_batch)
+
+    def _get_health(self) -> Dict[str, Any]:
+        """Helper method to print the overall health of the index"""
+        num_records_per_partition = []
+        for partition_id in list(self._partition_to_embedding_map.keys()):
+            num_records_per_partition.append(
+                len(self._partition_to_embedding_map[partition_id])
+            )
+
+        return {
+            "num_partitions": len(num_records_per_partition),
+            "num_records_in_memory": sum(num_records_per_partition),
+            "avg_num_records_per_partition": sum(num_records_per_partition)
+            // (len(num_records_per_partition) + 1),
+        }
 
     def _add_to_index_partitions(self):
         """Creates local Faiss indexes from the temporary numpy files."""
@@ -153,8 +183,3 @@ class IndexPartitionWriter:
         """Finalizer that flushes the temp buffers and creates local indexes."""
         self._flush()
         self._add_to_index_partitions()
-
-        # creates the centroid index once all the partitions are written.
-        faiss.write_index(
-            self._centroid_index, f"{self._collection_dir}/{self._centroid_index_file}"
-        )

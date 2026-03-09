@@ -43,7 +43,7 @@ def get_storage(storage_type: StorageEnum, dataset_type: HfDatasetType, **kwargs
         faiss_ivf = storage_impl.FaissIvf()
         return faiss_ivf.init(dataset_type.name, 
                               collection_dir=kwargs["collection_dir"],
-                              dimensions=512,
+                              dimensions=kwargs["dimensions"],
                               dataset_size=kwargs["dataset_size"],
                               write_partition_buffer_size=kwargs["write_partition_buffer_size"]
                               )

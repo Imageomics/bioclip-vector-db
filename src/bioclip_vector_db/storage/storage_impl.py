@@ -3,11 +3,13 @@ import logging
 import faiss
 import math
 import numpy as np
+import os
+import json
 
 from .storage_interface import StorageInterface
 from .faiss_utils import IndexPartitionWriter
 from typing import List, Dict
-from collections import defaultdict
+
 
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
@@ -74,27 +76,37 @@ class FaissIvf(StorageInterface):
             raise ValueError("Faiss cannot be initialized without dimensions.")
         if "dataset_size" not in kwargs:
             raise ValueError("Faiss cannot be initialized without dataset_size.")
-        
+
         # The 'nlist' parameter is a crucial hyperparameter for balancing search speed and accuracy.
         # A common rule of thumb, recommended by the FAISS authors, is to set nlist to be between
         # 4 * sqrt(N) and 16 * sqrt(N), where N is the total number of vectors in the dataset.
         # nlist denotes the number of local clusters.
-        self._nlist =  math.floor(10 * math.sqrt(kwargs["dataset_size"]))
+        self._nlist = math.floor(4 * math.sqrt(kwargs["dataset_size"]))
         self._train_set_size = 50 * self._nlist
 
         self._collection_dir = kwargs["collection_dir"]
         self._dimensions = kwargs["dimensions"]
         self._factory_string = f"IVF{self._nlist},SQfp16"
 
-        self._index = faiss.index_factory(self._dimensions, self._factory_string)
-        logger.info(
-            f"Initializing Faiss client with the factory string: {self._factory_string}."
-        )
+        self._centroid_index_path = os.path.join(self._collection_dir, "leader.index")
+        if os.path.exists(self._centroid_index_path) or kwargs.get(
+            "force_train", False
+        ):
+            logger.info(
+                f"Loading existing centroid index from {self._centroid_index_path}"
+            )
+            self._index = faiss.read_index(self._centroid_index_path)
+            logger.info(f"Loaded index from disk: {self._centroid_index_path} with {self._index.ntotal} vectors.")
+        else:
+            logger.info(
+                f"Initializing Faiss client with the factory string: {self._factory_string}."
+            )
+            self._index = faiss.index_factory(self._dimensions, self._factory_string)
 
         self._writer = IndexPartitionWriter(
-            centroid_index=self._index, 
+            centroid_index=self._index,
             batch_size=kwargs.get("write_partition_buffer_size", 1000),
-            collection_dir=self._collection_dir
+            collection_dir=self._collection_dir,
         )
 
         logger.info(f"Number of clusters: {self._nlist}")
@@ -133,16 +145,20 @@ class FaissIvf(StorageInterface):
         embeddings: List[List[float]],
         metadatas: List[Dict[str, str]],
     ):
-        if len(self._train_ids) < self._train_set_size:
+        # Skip training if the training set size is smaller or if the index is untrained.
+        if len(self._train_ids) < self._train_set_size and not self._index.is_trained:
             self._train_ids.extend(ids)
             self._train_embeddings.extend(embeddings)
             self._train_metadatas.extend(metadatas)
+            logger.info(f"Number of training records in memory: {len(self._train_ids)}")
         elif not self._index.is_trained:
             self._train_index()
         else:
+            logger.info(f"Skipped training - adding {len(ids)} records to index.")
             for id, embedding, metadata in zip(ids, embeddings, metadatas):
-                self._add_embedding_to_index(id, embedding, metadata)
-
+                self._add_embedding_to_index(id, embedding, {})
+            logger.info(json.dumps(self._writer._get_health(), indent=2))
+        
     def query(self, id: str):
         pass
 
@@ -154,6 +170,8 @@ class FaissIvf(StorageInterface):
         logging.info(f"Training index with shape: {train_stack.shape}")
         self._index.train(train_stack)
         logging.info("Training complete.")
+        faiss.write_index(self._index, self._centroid_index_path)
+        logging.info(f"Saved centroid index to: {self._centroid_index_path}")
 
         # once trained, add all the training data back into the db.
         for id, embedding, metadata in zip(

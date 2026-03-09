@@ -26,8 +26,27 @@ logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
 logger = logging.getLogger()
 
 _LOCAL_DATASET_KEYS = ("__key__", "jpg", "taxontag_com.txt")
+_LOCAL_EMBEDDING_KEYS = (
+    "source_dataset",
+    "source_id",
+    "kingdom",
+    "phylum",
+    "class",
+    "order",
+    "family",
+    "genus",
+    "species",
+    "scientific_name",
+    "common_name",
+    "resolution_status",
+    "publisher",
+    "basisOfRecord",
+    "identifier",
+    "img_type",
+)
 BIOCLIP_V1_MODEL_STR = "hf-hub:imageomics/bioclip"
 BIOCLIP_V2_MODEL_STR = "hf-hub:imageomics/bioclip-2"
+
 
 def _get_device() -> torch.device:
     if torch.cuda.is_available():
@@ -48,19 +67,27 @@ class BioclipVectorDatabase:
         storage: StorageInterface,
         split: str,
         local_dataset: str = None,
+        local_embeddings: str = None,
         batch_size: int = 10,
         model: str = BIOCLIP_V1_MODEL_STR,
     ):
         self._dataset_type = dataset_type
-        self._classifier = TreeOfLifeClassifier(device=_get_device())
         self._dataset = None
         self._storage = storage
         self._use_local_dataset = local_dataset is not None
+        self._use_local_embeddings = local_embeddings is not None
         self._batch_size = batch_size
 
-        self._prepare_dataset(split=split, local_dataset=local_dataset)
+        if not self._use_local_embeddings:
+            self._classifier = TreeOfLifeClassifier(device=_get_device(), model_str=model)
 
-    def _prepare_dataset(self, split: str, local_dataset: str) -> datasets.Dataset:
+        self._prepare_dataset(
+            split=split, local_dataset=local_dataset, local_embeddings=local_embeddings
+        )
+
+    def _prepare_dataset(
+        self, split: str, local_dataset: str, local_embeddings: str = None
+    ) -> datasets.Dataset:
         """Loads the dataset from Hugging Face to memory."""
         if split is None:
             raise ValueError("Split cannot be None. Please provide a valid split.")
@@ -78,7 +105,14 @@ class BioclipVectorDatabase:
                 wds.to_tuple(*_LOCAL_DATASET_KEYS),
                 wds.batched(self._batch_size),
             )
-
+        elif self._use_local_embeddings:
+            logger.info(
+                f"Loading embeddings directly from local disk: {local_embeddings}"
+            )
+            self._dataset = datasets.load_dataset(
+                "parquet", data_files=local_embeddings, split=split, streaming=True
+            )
+            logger.info("Dataset set to stream from local embeddings.")
         else:
             self._dataset = datasets.load_dataset(
                 self._dataset_type.value, split=split, streaming=False
@@ -179,9 +213,27 @@ class BioclipVectorDatabase:
 
         logger.info(f"Database loaded with {num_records} records.")
 
+    def _load_embeddings_local(self):
+        num_records = 0
+
+        batched_iterator = self._dataset.iter(batch_size=self._batch_size)
+        for data_batch in tqdm(batched_iterator):
+            metadatas_batch = [
+                {key: data_batch[key][i] for key in _LOCAL_EMBEDDING_KEYS}
+                for i in range(len(data_batch["uuid"]))
+            ]
+            num_records += len(data_batch["uuid"])
+            self._storage.batch_add_embeddings(
+                embeddings=data_batch["emb"], ids=data_batch["uuid"], metadatas=metadatas_batch
+            )
+
+        logger.info(f"Database loaded with {num_records} records.")
+
     def load_database(self):
         if self._use_local_dataset:
             self._load_database_local()
+        elif self._use_local_embeddings:
+            self._load_embeddings_local()
         else:
             self._load_database_web()
         self._storage.flush()
@@ -220,7 +272,14 @@ def main():
         "--local_dataset",
         type=str,
         default=None,
-        help="Path to the local dataset, if unspecified will attempt download form Hugging Face.",
+        help="Path to the local dataset, if unspecified will attempt download form HuggingFace.",
+    )
+
+    parser.add_argument(
+        "--local_embeddings",
+        type=str,
+        default=None,
+        help="Path to the pre-calculated embeddings, cannot be used together with local_datasets.",
     )
 
     parser.add_argument(
@@ -266,8 +325,13 @@ def main():
     output_dir = args.output_dir
     split = args.split
     local_dataset = args.local_dataset
+    local_embeddings = args.local_embeddings
     model = args.bioclip_model
 
+    if local_embeddings is not None and local_dataset is not None:
+        raise ValueError(
+            "You cannot specify local embeddings and local dataset at the same time"
+        )
 
     logger.info(f"Creating database for dataset: {dataset} with split: {split}")
     logger.info(f"Creating database for dataset: {dataset.value}")
@@ -277,13 +341,21 @@ def main():
     logger.info(f"Using model: {model}")
     logging.info(f"Approximate dataset size: {args.dataset_size}")
 
+    if model == BIOCLIP_V1_MODEL_STR:
+        dimensions = 512
+    elif model == BIOCLIP_V2_MODEL_STR:
+        dimensions = 768
+    else:
+        raise ValueError(f"Invalid model: {model}")
+
     # Currently only CHROMA backend is supported so hardcoding is fine.
     storage_obj = storage_factory.get_storage(
         storage_type=args.storage,
         dataset_type=dataset,
         collection_dir=output_dir,
         dataset_size=args.dataset_size,
-        write_partition_buffer_size=args.write_partition_buffer_size
+        write_partition_buffer_size=args.write_partition_buffer_size,
+        dimensions=dimensions,
     )
     if args.reset:
         logger.warning("Resetting the database..")
@@ -294,6 +366,7 @@ def main():
         storage=storage_obj,
         split=split,
         local_dataset=local_dataset,
+        local_embeddings=local_embeddings,
         batch_size=args.batch_size,
         model=model,
     )

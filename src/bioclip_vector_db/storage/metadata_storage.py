@@ -105,6 +105,44 @@ class MetadataDatabase:
             logger.error(f"Error adding mapping: {e}")
             raise
 
+    def batch_add_mapping(
+        self,
+        mappings: List[Dict[str, Any]],
+    ):
+        """
+        Adds a batch of mappings to the database in a single transaction.
+
+        Args:
+            mappings: A list of mapping dictionaries. Each dictionary should have
+                      'partition_id', 'faiss_id', 'original_id', and optionally 'metadata'.
+        """
+        conn = self._get_connection()
+        data_to_insert = [
+            (
+                int(m["partition_id"]),
+                int(m["faiss_id"]),
+                m["original_id"],
+                json.dumps(m.get("metadata")).encode("utf-8")
+                if m.get("metadata")
+                else None,
+            )
+            for m in mappings
+        ]
+        try:
+            with conn:
+                conn.executemany(
+                    "INSERT INTO id_mapping (partition_id, faiss_id, original_id, metadata) VALUES (?, ?, ?, ?)",
+                    data_to_insert,
+                )
+                logger.debug(f"Added {len(mappings)} mappings.")
+        except sqlite3.IntegrityError as e:
+            logger.warning(
+                f"One or more mappings in the batch already exist. Error: {e}"
+            )
+        except sqlite3.Error as e:
+            logger.error(f"Error adding batch of mappings: {e}")
+            raise
+    
     def get_original_id(self, partition_id: int, faiss_id: int) -> Optional[str]:
         """
         Retrieves the original ID for a given FAISS ID in a specific partition.
