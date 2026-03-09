@@ -56,9 +56,9 @@ You can adjust two settings in the application to refine your search results. Th
     
 The chart below illustrates why increasing the Search Depth is often necessary.
 
-![Search Depth Demonstration](search_depth_demo.png)
+![Diagram comparing low and high search depth. Left panel shows a query image (Red X) near the border of one region, missing the true best match (Black Star) in an adjacent region because only one region is searched. Right panel shows the same scenario with increased search depth, where the search crosses into the neighboring region and successfully finds the Green Star.](search_depth_demo.png)
 
-**Left (Low Depth):** The user's image (Red X) falls just inside the blue region. However, the _true_ best match (Green Star) sits just across the border in the neighboring grey region. Because the system is set to look in only one region, it hits a "hard wall" and misses the best match.
+**Left (Low Depth):** The user's image (Red X) falls just inside the blue region. However, the _true_ best match (Black Star) sits just across the border in the neighboring grey region. Because the system is set to look in only one region, it hits a "hard wall" and misses the best match.
 
 **Right (High Depth):** By increasing the search depth, the system is allowed to check neighboring regions. It successfully crosses the border and finds the Green Star.
 
